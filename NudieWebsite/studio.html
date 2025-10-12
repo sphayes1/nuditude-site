@@ -18,26 +18,25 @@
       </nav>
     </header>
     <main class="container">
-      <h1>AI Studio</h1>
-      <p class="note">Upload an image for AI analysis, or write your own prompt. For 18+ tasteful content only. Images are not stored.</p>
+      <h1>AI Boudoir Generator</h1>
+      <p class="note">Upload a photo to create stunning, artistic transformations. For 18+ only. Images are private and never stored.</p>
 
       <div class="card">
-        <h3 style="margin-top:0">Option 1: Upload Image (Recommended)</h3>
-        <p class="note" style="font-size:0.9em">Upload a photo and AI will analyze it to create a stylized prompt</p>
+        <h3 style="margin-top:0">Upload Your Photo</h3>
+        <p class="note" style="font-size:0.9em">Each generation creates a more artistic, intimate version. Run multiple times for progressive results.</p>
         <input type="file" id="imageUpload" accept="image/jpeg,image/png,image/webp" style="margin-bottom:12px" />
         <div id="preview" style="margin:12px 0;text-align:center"></div>
-        <button id="analyzeBtn" class="btn btn-primary" disabled>Analyze & Generate</button>
-      </div>
-
-      <div class="card" style="margin-top:20px">
-        <h3 style="margin-top:0">Option 2: Write Your Own Prompt</h3>
-        <label for="prompt">Describe your photoshoot:</label>
-        <textarea id="prompt" rows="4" style="width:100%;padding:10px;border-radius:8px;border:1px solid #2a2a35;background:#0f0f14;color:#e5e7eb;margin:6px 0 12px" placeholder="soft portrait, boudoir lighting, elegant silk robe, warm rim light, cinematic, shallow depth of field"></textarea>
-        <button id="generateBtn" class="btn btn-primary">Generate from Prompt</button>
+        <button id="generateBtn" class="btn btn-primary" disabled>Generate</button>
+        <button id="nextLevelBtn" class="btn" style="margin-left:10px;display:none">Make it Spicier 🔥</button>
       </div>
 
       <div id="status" class="note" style="margin-top:18px;text-align:center;font-size:1.1em"></div>
       <div id="result" style="margin-top:18px;text-align:center"></div>
+
+      <div id="promptDebug" style="margin-top:12px;padding:12px;background:#1a1a24;border-radius:8px;font-size:0.85em;color:#888;display:none">
+        <strong>Debug - Generated Prompt:</strong>
+        <div id="promptText" style="margin-top:6px;color:#aaa"></div>
+      </div>
     </main>
     <footer class="container footer">
       <div>© <span id="year"></span> AI Boudoir</div>

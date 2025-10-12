@@ -2,13 +2,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // Elements
   const imageUpload = document.getElementById('imageUpload');
   const preview = document.getElementById('preview');
-  const analyzeBtn = document.getElementById('analyzeBtn');
-  const promptEl = document.getElementById('prompt');
   const generateBtn = document.getElementById('generateBtn');
+  const nextLevelBtn = document.getElementById('nextLevelBtn');
   const statusEl = document.getElementById('status');
   const resultEl = document.getElementById('result');
+  const promptDebug = document.getElementById('promptDebug');
+  const promptText = document.getElementById('promptText');
 
   let selectedFile = null;
+  let currentSpiceLevel = 1;
+  let lastGeneratedImage = null;
 
   // Health check
   (async () => {
@@ -28,8 +31,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const file = e.target.files[0];
     if (!file) {
       selectedFile = null;
-      analyzeBtn.disabled = true;
+      generateBtn.disabled = true;
+      nextLevelBtn.style.display = 'none';
       preview.innerHTML = '';
+      resultEl.innerHTML = '';
+      currentSpiceLevel = 1;
       return;
     }
 
@@ -48,7 +54,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     selectedFile = file;
-    analyzeBtn.disabled = false;
+    generateBtn.disabled = false;
+    currentSpiceLevel = 1;
+    nextLevelBtn.style.display = 'none';
+    resultEl.innerHTML = '';
 
     // Show preview
     const reader = new FileReader();
@@ -58,22 +67,24 @@ document.addEventListener('DOMContentLoaded', () => {
     reader.readAsDataURL(file);
   });
 
-  // Handle analyze & generate button
-  analyzeBtn.addEventListener('click', async () => {
+  // Main generate function
+  async function generateImage(spiceLevel) {
     if (!selectedFile) {
       alert('Please select an image first');
       return;
     }
 
-    analyzeBtn.disabled = true;
     generateBtn.disabled = true;
+    nextLevelBtn.disabled = true;
     resultEl.innerHTML = '';
-    statusEl.textContent = 'Step 1/2: Analyzing image with AI... ~10s';
+    statusEl.textContent = '🎨 Creating your artistic transformation... ~30-60s';
+    statusEl.style.color = '';
 
     try {
-      // Step 1: Analyze the image
+      // Step 1: Analyze the image with spice level
       const formData = new FormData();
       formData.append('image', selectedFile);
+      formData.append('spiceLevel', spiceLevel);
 
       const analyzeRes = await fetch('/api/analyze', {
         method: 'POST',
@@ -91,12 +102,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const enhancedPrompt = analyzeData.prompt;
       console.log('Enhanced prompt:', enhancedPrompt);
+      console.log('Spice level:', analyzeData.spiceLevel);
 
-      // Show the prompt in the textarea for user to see/edit
-      promptEl.value = enhancedPrompt;
+      // Show prompt in debug section (hidden by default)
+      if (promptDebug && promptText) {
+        promptText.textContent = enhancedPrompt;
+      }
 
       // Step 2: Generate image from the prompt
-      statusEl.textContent = 'Step 2/2: Generating new image... ~30-60s';
+      statusEl.textContent = '🔥 Generating your image... ~30-60s';
 
       const generateRes = await fetch('/api/generate', {
         method: 'POST',
@@ -115,70 +129,43 @@ document.addEventListener('DOMContentLoaded', () => {
       img.src = generateData.image;
       img.alt = 'Generated image';
       img.style.maxWidth = '100%';
+      img.style.maxHeight = '600px';
       img.style.borderRadius = '12px';
       img.style.boxShadow = '0 10px 40px rgba(0,0,0,.4)';
       resultEl.appendChild(img);
 
-      statusEl.textContent = '✅ Done! Generated from your uploaded image.';
-      statusEl.style.color = '#10b981';
+      lastGeneratedImage = generateData.image;
 
-    } catch (e) {
-      statusEl.textContent = '❌ Error: ' + (e.message || 'Unknown error');
-      statusEl.style.color = '#ef4444';
-      console.error(e);
-    } finally {
-      analyzeBtn.disabled = false;
-      generateBtn.disabled = false;
-    }
-  });
+      // Update spice level and show "Make it Spicier" button
+      currentSpiceLevel = analyzeData.nextSpiceLevel;
 
-  // Handle generate from prompt button
-  generateBtn.addEventListener('click', async () => {
-    const prompt = (promptEl.value || '').trim();
-
-    if (!prompt) {
-      alert('Please enter a prompt');
-      return;
-    }
-
-    generateBtn.disabled = true;
-    analyzeBtn.disabled = true;
-    resultEl.innerHTML = '';
-    statusEl.textContent = 'Generating from prompt... ~30-60s';
-    statusEl.style.color = '';
-
-    try {
-      const generateRes = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
-      });
-
-      const generateData = await generateRes.json();
-
-      if (!generateRes.ok) {
-        throw new Error(generateData.error || 'Generation failed');
+      if (analyzeData.maxLevel) {
+        statusEl.textContent = '🔥💯 Maximum spice level reached!';
+        statusEl.style.color = '#ef4444';
+        nextLevelBtn.style.display = 'none';
+      } else {
+        statusEl.textContent = '✅ Done! Want to make it even spicier?';
+        statusEl.style.color = '#10b981';
+        nextLevelBtn.style.display = 'inline-block';
+        nextLevelBtn.disabled = false;
       }
 
-      // Display result
-      const img = document.createElement('img');
-      img.src = generateData.image;
-      img.alt = 'Generated image';
-      img.style.maxWidth = '100%';
-      img.style.borderRadius = '12px';
-      img.style.boxShadow = '0 10px 40px rgba(0,0,0,.4)';
-      resultEl.appendChild(img);
-
-      statusEl.textContent = '✅ Done!';
-      statusEl.style.color = '#10b981';
-
     } catch (e) {
       statusEl.textContent = '❌ Error: ' + (e.message || 'Unknown error');
       statusEl.style.color = '#ef4444';
       console.error(e);
     } finally {
       generateBtn.disabled = false;
-      analyzeBtn.disabled = false;
     }
+  }
+
+  // Handle initial generate button
+  generateBtn.addEventListener('click', () => {
+    generateImage(1); // Start at spice level 1
+  });
+
+  // Handle "Make it Spicier" button
+  nextLevelBtn.addEventListener('click', () => {
+    generateImage(currentSpiceLevel);
   });
 });

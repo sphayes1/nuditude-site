@@ -15,9 +15,10 @@ export async function onRequestPost(context) {
       });
     }
 
-    // Parse the uploaded image
+    // Parse the uploaded image and spice level
     const formData = await request.formData();
     const imageFile = formData.get('image');
+    const spiceLevel = parseInt(formData.get('spiceLevel') || '1');
 
     if (!imageFile) {
       return new Response(JSON.stringify({ error: "No image file provided" }), {
@@ -25,6 +26,8 @@ export async function onRequestPost(context) {
         headers: { "Content-Type": "application/json" }
       });
     }
+
+    console.log("Spice level requested:", spiceLevel);
 
     // Convert image to base64 (Cloudflare Workers compatible method)
     const arrayBuffer = await imageFile.arrayBuffer();
@@ -86,8 +89,19 @@ export async function onRequestPost(context) {
 
     console.log("Image description:", description);
 
-    // Step 2: Enhance description into stylized AI art prompt
+    // Step 2: Enhance description into stylized AI art prompt with progressive spice
     console.log("Enhancing prompt with GPT-4...");
+
+    // Define spice level instructions
+    const spiceInstructions = {
+      1: "Keep the person mostly clothed but in a more relaxed, casual pose. Remove outer layers like jackets or sweaters. Suggest elegant, artistic lighting. Tasteful and sophisticated.",
+      2: "The person should be in lingerie or underwear. Elegant, high-end boudoir photography style. Soft lighting, artistic poses. Tasteful sensuality.",
+      3: "Artistic nude photography. Implied nudity with strategic positioning, shadows, or partial coverage. Professional, tasteful, gallery-quality artistic photography. No explicit content.",
+      4: "Full artistic nude in an elegant, sensual pose. High-end fashion photography aesthetic. Dramatic lighting, sophisticated composition. Artistic and tasteful, never pornographic."
+    };
+
+    const currentInstruction = spiceInstructions[Math.min(spiceLevel, 4)] || spiceInstructions[1];
+
     const enhanceResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -99,15 +113,15 @@ export async function onRequestPost(context) {
         messages: [
           {
             role: "system",
-            content: "You are an expert at writing AI image generation prompts. Convert factual descriptions into artistic, stylized prompts suitable for Stable Diffusion XL. Focus on artistic style, lighting, mood, and tasteful adult themes. Keep it tasteful and artistic, not explicit."
+            content: "You are an expert at writing AI image generation prompts for artistic boudoir photography. Convert factual descriptions into artistic, stylized prompts suitable for Stable Diffusion XL. Focus on artistic style, lighting, mood, and composition. Always maintain artistic taste and sophistication."
           },
           {
             role: "user",
-            content: `Convert this description into a detailed AI art prompt for a tasteful, artistic boudoir-style image:\n\n${description}\n\nStyle: Professional photography, soft lighting, elegant, artistic, tasteful sensuality. Output ONLY the prompt, no explanation.`
+            content: `Based on this person's description:\n${description}\n\nCreate a detailed Stable Diffusion prompt following these guidelines:\n${currentInstruction}\n\nInclude: artistic style, lighting (soft, rim, dramatic), mood, composition, camera angle. Use photography terms like 'bokeh', 'shallow depth of field', 'cinematic lighting'.\n\nOutput ONLY the prompt, no explanation or preamble.`
           }
         ],
-        max_tokens: 200,
-        temperature: 0.8
+        max_tokens: 250,
+        temperature: 0.85
       })
     });
 
@@ -124,10 +138,13 @@ export async function onRequestPost(context) {
 
     console.log("Enhanced prompt:", enhancedPrompt);
 
-    // Return the enhanced prompt
+    // Return the enhanced prompt with spice level
     return new Response(JSON.stringify({
       prompt: enhancedPrompt,
-      originalDescription: description
+      originalDescription: description,
+      spiceLevel: spiceLevel,
+      nextSpiceLevel: Math.min(spiceLevel + 1, 4),
+      maxLevel: spiceLevel >= 4
     }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
