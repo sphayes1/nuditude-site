@@ -159,6 +159,24 @@ export async function onRequestPost(context) {
 
     console.log("Generation complete, output URL:", outputUrl);
 
+    // Check if output is raw base64 (no data URL prefix)
+    // RunPod serverless often returns raw base64 strings
+    if (outputUrl && !outputUrl.startsWith('data:') && !outputUrl.startsWith('http')) {
+      // It's raw base64, add the data URL prefix
+      // Detect image format from base64 header
+      if (outputUrl.startsWith('iVBOR')) {
+        outputUrl = `data:image/png;base64,${outputUrl}`;
+        console.log("Converted raw base64 to PNG data URL");
+      } else if (outputUrl.startsWith('/9j/') || outputUrl.startsWith('data:image/jpeg')) {
+        outputUrl = `data:image/jpeg;base64,${outputUrl}`;
+        console.log("Converted raw base64 to JPEG data URL");
+      } else {
+        // Default to PNG
+        outputUrl = `data:image/png;base64,${outputUrl}`;
+        console.log("Converted raw base64 to PNG data URL (default)");
+      }
+    }
+
     // Return the image URL
     return new Response(JSON.stringify({ image: outputUrl }), {
       status: 200,
