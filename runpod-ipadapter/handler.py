@@ -56,11 +56,11 @@ print("SDXL pipeline loaded successfully!")
 print("Loading FaceID (IP-Adapter) ...")
 try:
     # Preflight: ensure FaceID weight exists; try multiple URLs with retry
-    FACEID_PATH = "/workspace/models/ip-adapter/ip-adapter-faceid_sdxl.bin"
+    # Note: FaceID weights are in the IP-Adapter-FaceID repository, not IP-Adapter
+    FACEID_PATH = "/workspace/models/ip-adapter/ip-adapter-faceid-plusv2_sdxl.bin"
     URLS = [
-        "https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-faceid_sdxl.bin",
-        "https://huggingface.co/h94/IP-Adapter/resolve/main/models/ip-adapter-faceid_sdxl.bin",
-        "https://raw.githubusercontent.com/h94/IP-Adapter/main/sdxl_models/ip-adapter-faceid_sdxl.bin"
+        "https://huggingface.co/h94/IP-Adapter-FaceID/resolve/main/ip-adapter-faceid-plusv2_sdxl.bin",
+        "https://huggingface.co/h94/IP-Adapter-FaceID/resolve/main/ip-adapter-faceid_sdxl.bin",
     ]
     os.makedirs(os.path.dirname(FACEID_PATH), exist_ok=True)
     size = os.path.getsize(FACEID_PATH) if os.path.exists(FACEID_PATH) else 0
@@ -89,21 +89,11 @@ try:
 except Exception as e:
     print(f"FaceID preflight warning: {e}")
 try:
-    # Preflight: verify FaceID weight exists and is non-empty; fetch if needed
-    FACEID_PATH = "/workspace/models/ip-adapter/ip-adapter-faceid_sdxl.bin"
-    try:
-        size = os.path.getsize(FACEID_PATH) if os.path.exists(FACEID_PATH) else 0
-        print(f"FaceID weight at {FACEID_PATH}, size={size} bytes")
-        if size < 1024 * 1024:  # smaller than 1MB implies bad download
-            import urllib.request
-            url = "https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-faceid_sdxl.bin"
-            print("FaceID weight missing or tiny; downloading at runtime ...")
-            os.makedirs(os.path.dirname(FACEID_PATH), exist_ok=True)
-            urllib.request.urlretrieve(url, FACEID_PATH)
-            size = os.path.getsize(FACEID_PATH)
-            print(f"Downloaded FaceID weight, size={size} bytes")
-    except Exception as e:
-        print(f"FaceID preflight warning: {e}")
+    # Verify FaceID weight downloaded successfully
+    size = os.path.getsize(FACEID_PATH) if os.path.exists(FACEID_PATH) else 0
+    print(f"FaceID weight at {FACEID_PATH}, size={size} bytes")
+    if size < 1024 * 1024:
+        raise Exception(f"FaceID weight file is too small ({size} bytes) or missing")
     # Start InsightFace (antelopev2)
     face_app = FaceAnalysis(
         name="antelopev2",
