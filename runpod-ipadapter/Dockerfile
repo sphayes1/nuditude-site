@@ -1,7 +1,7 @@
 # IP-Adapter enabled SDXL for RunPod Serverless
-# Based on RunPod's A1111 worker image
+# Using public RunPod PyTorch base image
 
-FROM registry.runpod.net/runpod-workers-worker-a1111-main-dockerfile:022c30933
+FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel
 
 # Install IP-Adapter dependencies
 RUN pip install --no-cache-dir \
