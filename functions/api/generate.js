@@ -101,6 +101,7 @@ export async function onRequestPost(context) {
       if (statusData.status === "COMPLETED") {
         // RunPod returns output in statusData.output
         const output = statusData.output;
+        console.log("Raw output from RunPod:", JSON.stringify(output));
 
         // Handle different output formats
         if (typeof output === "string") {
@@ -113,7 +114,17 @@ export async function onRequestPost(context) {
           outputUrl = output[0];
         }
 
+        console.log("Extracted outputUrl:", outputUrl);
+
         if (outputUrl) {
+          // Check if it's a base64 data URL or a regular URL
+          if (outputUrl.startsWith('data:')) {
+            console.log("Output is base64 data URL");
+          } else if (outputUrl.startsWith('http')) {
+            console.log("Output is HTTP URL");
+          } else {
+            console.log("Output format unclear:", outputUrl.substring(0, 50));
+          }
           break;
         } else {
           return new Response(JSON.stringify({
