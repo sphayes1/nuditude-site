@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AI Studio • AI Boudoir</title>
+    <title>AI Studio Ã¢â‚¬Â¢ AI Boudoir</title>
     <link rel="stylesheet" href="assets/styles.css" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests;" />
   </head>
@@ -30,48 +30,11 @@
       <div id="result" style="margin-top:18px;text-align:center"></div>
     </main>
     <footer class="container footer">
-      <div>© <span id="year"></span> AI Boudoir</div>
+      <div>© <span id="year"></span> Nuditude</div>
       <div class="footer-links">
         <a href="terms.html">Terms</a>
         <a href="privacy.html">Privacy</a>
       </div>
     </footer>
-    <script src="assets/script.js"></script>
-    <script>
-      const btn = document.getElementById('go');
-      const promptEl = document.getElementById('prompt');
-      const statusEl = document.getElementById('status');
-      const resultEl = document.getElementById('result');
-
-      btn.addEventListener('click', async () => {
-        const prompt = (promptEl.value || '').trim();
-        if (!prompt) { alert('Please enter a prompt.'); return; }
-        statusEl.textContent = 'Generating… ~30–60s';
-        btn.disabled = true;
-        resultEl.innerHTML = '';
-        try {
-          const res = await fetch('/.netlify/functions/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt })
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Generation failed');
-          const img = document.createElement('img');
-          img.src = data.image;
-          img.alt = 'Generated image';
-          img.style.maxWidth = '100%';
-          img.style.borderRadius = '12px';
-          img.style.boxShadow = '0 10px 40px rgba(0,0,0,.4)';
-          resultEl.appendChild(img);
-          statusEl.textContent = 'Done';
-        } catch (e) {
-          statusEl.textContent = 'Error generating image';
-          console.error(e);
-        } finally {
-          btn.disabled = false;
-        }
-      });
-    </script>
-  </body>
+    <script src="assets/script.js" defer></script>\n    <script src="assets/studio.js" defer></script>\n  </body>
   </html>
