@@ -19,75 +19,83 @@ export async function onRequestPost(context) {
     const formData = await request.formData();
     const imageFile = formData.get('image');
     const spiceLevel = parseInt(formData.get('spiceLevel') || '1');
+    const baseDescription = formData.get('baseDescription'); // Reuse cached description
 
-    if (!imageFile) {
-      return new Response(JSON.stringify({ error: "No image file provided" }), {
+    console.log("Spice level requested:", spiceLevel);
+    console.log("Base description provided:", !!baseDescription);
+
+    let description = baseDescription;
+
+    // Only analyze image with Vision API if we don't have a base description
+    if (!description && imageFile) {
+      console.log("No base description - analyzing image with GPT-4 Vision...");
+
+      // Convert image to base64 (Cloudflare Workers compatible method)
+      const arrayBuffer = await imageFile.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+
+      // Convert bytes to base64 string
+      let binary = '';
+      const chunkSize = 0x8000; // 32KB chunks to avoid stack overflow
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+        binary += String.fromCharCode.apply(null, chunk);
+      }
+      const base64Image = btoa(binary);
+
+      const mimeType = imageFile.type || 'image/jpeg';
+      const dataUrl = `data:${mimeType};base64,${base64Image}`;
+
+      // Step 1: Analyze image with GPT-4 Vision
+      const visionResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: "Describe this person's appearance in detail. Focus on: physical features, clothing style, pose, lighting, and setting. Be factual and neutral. Do not include names or identify individuals."
+                },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: dataUrl
+                  }
+                }
+              ]
+            }
+          ],
+          max_tokens: 300
+        })
+      });
+
+      if (!visionResponse.ok) {
+        const errorText = await visionResponse.text();
+        return new Response(JSON.stringify({ error: "Vision API failed", detail: errorText }), {
+          status: visionResponse.status,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      const visionData = await visionResponse.json();
+      description = visionData.choices[0].message.content;
+
+      console.log("Image description:", description);
+    } else if (description) {
+      console.log("Using cached base description to maintain likeness");
+    } else {
+      return new Response(JSON.stringify({ error: "No image or base description provided" }), {
         status: 400,
         headers: { "Content-Type": "application/json" }
       });
     }
-
-    console.log("Spice level requested:", spiceLevel);
-
-    // Convert image to base64 (Cloudflare Workers compatible method)
-    const arrayBuffer = await imageFile.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-
-    // Convert bytes to base64 string
-    let binary = '';
-    const chunkSize = 0x8000; // 32KB chunks to avoid stack overflow
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-      binary += String.fromCharCode.apply(null, chunk);
-    }
-    const base64Image = btoa(binary);
-
-    const mimeType = imageFile.type || 'image/jpeg';
-    const dataUrl = `data:${mimeType};base64,${base64Image}`;
-
-    // Step 1: Analyze image with GPT-4 Vision
-    console.log("Analyzing image with GPT-4 Vision...");
-    const visionResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Describe this person's appearance in detail. Focus on: physical features, clothing style, pose, lighting, and setting. Be factual and neutral. Do not include names or identify individuals."
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: dataUrl
-                }
-              }
-            ]
-          }
-        ],
-        max_tokens: 300
-      })
-    });
-
-    if (!visionResponse.ok) {
-      const errorText = await visionResponse.text();
-      return new Response(JSON.stringify({ error: "Vision API failed", detail: errorText }), {
-        status: visionResponse.status,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    const visionData = await visionResponse.json();
-    const description = visionData.choices[0].message.content;
-
-    console.log("Image description:", description);
 
     // Step 2: Enhance description into stylized AI art prompt with progressive spice
     console.log("Enhancing prompt with GPT-4...");

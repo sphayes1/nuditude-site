@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let selectedFile = null;
   let currentSpiceLevel = 1;
   let lastGeneratedImage = null;
+  let baseDescription = null; // Store the original description to maintain likeness
 
   // Health check
   (async () => {
@@ -56,6 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
     selectedFile = file;
     generateBtn.disabled = false;
     currentSpiceLevel = 1;
+    baseDescription = null; // Reset description for new image
     nextLevelBtn.style.display = 'none';
     resultEl.innerHTML = '';
 
@@ -83,8 +85,18 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       // Step 1: Analyze the image with spice level
       const formData = new FormData();
-      formData.append('image', selectedFile);
+
+      // Only send image on first generation (level 1), then reuse description
+      if (spiceLevel === 1 || !baseDescription) {
+        formData.append('image', selectedFile);
+      }
+
       formData.append('spiceLevel', spiceLevel);
+
+      // If we have a base description, send it to maintain likeness
+      if (baseDescription && spiceLevel > 1) {
+        formData.append('baseDescription', baseDescription);
+      }
 
       const analyzeRes = await fetch('/api/analyze', {
         method: 'POST',
@@ -103,6 +115,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const enhancedPrompt = analyzeData.prompt;
       console.log('Enhanced prompt:', enhancedPrompt);
       console.log('Spice level:', analyzeData.spiceLevel);
+
+      // Store the base description from first generation
+      if (spiceLevel === 1 && analyzeData.originalDescription) {
+        baseDescription = analyzeData.originalDescription;
+        console.log('Stored base description for likeness preservation');
+      }
 
       // Show prompt in debug section (hidden by default)
       if (promptDebug && promptText) {
