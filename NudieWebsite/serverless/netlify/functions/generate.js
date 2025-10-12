@@ -28,6 +28,57 @@ async function callWorkerA1111(prompt) {
   if (!base64) throw new Error('Worker returned no image');
   return 'data:image/png;base64,' + base64;
 }
+async function callRunPodServerless(prompt) {
+  const endpoint = process.env.RUNPOD_ENDPOINT_ID;
+  const key = process.env.RUNPOD_API_KEY;
+  if (!endpoint || !key) throw new Error('RunPod serverless not configured');
+  const base = 'https://api.runpod.ai/v2/' + endpoint;
+  const headers = { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' };
+  const body = {
+    input: {
+      prompt: prompt,
+      negative_prompt: 'blurry, deformed, extra limbs, watermark, text, logo, bad hands, bad anatomy',
+      width: 768,
+      height: 1024,
+      steps: 28,
+      cfg_scale: 7,
+      sampler_name: 'DPM++ 2M Karras'
+    }
+  };
+  const create = await fetch(base + '/run', { method: 'POST', headers, body: JSON.stringify(body) });
+  if (!create.ok) {
+    const t = await create.text();
+    throw new Error('RunPod create failed: ' + t);
+  }
+  const created = await create.json();
+  const id = created && (created.id || created.jobId || created['id']);
+  if (!id) throw new Error('RunPod: missing job id');
+
+  const started = Date.now();
+  const timeoutMs = 180000; // 3m
+  while (Date.now() - started < timeoutMs) {
+    await new Promise(r => setTimeout(r, 2000));
+    const statusRes = await fetch(base + '/status/' + id, { headers });
+    if (!statusRes.ok) {
+      const t = await statusRes.text();
+      throw new Error('RunPod status failed: ' + t);
+    }
+    const status = await statusRes.json();
+    const s = (status && (status.status || status.state || status['execution'] || ''));
+    const output = status && (status.output || (status.status === 'COMPLETED' && status.output));
+    if (status.status === 'COMPLETED' || s === 'COMPLETED') {
+      // Common Automatic1111 serverless returns { images: [base64,...] }
+      const img = output && (output.image || (output.images && output.images[0]));
+      if (!img) throw new Error('RunPod: no image in output');
+      // Some endpoints already return full data URLs; if not, add prefix
+      return img.startsWith('data:image') ? img : ('data:image/png;base64,' + img);
+    }
+    if (status.status === 'FAILED' || s === 'FAILED') {
+      throw new Error('RunPod job failed: ' + JSON.stringify(status));
+    }
+  }
+  throw new Error('RunPod: job timed out');
+}
 exports.handler = async function (event) {
   const json = (status, obj) => ({ statusCode: status, headers: (function(){ const h={ 'Content-Type': 'application/json' }; const wa=process.env.WORKER_AUTH; if(wa){ const b=Buffer.from(wa).toString('base64'); h['Authorization']='Basic '+b; } return h; })(), body: JSON.stringify(obj) });
 
@@ -43,7 +94,7 @@ exports.handler = async function (event) {
     if (!token && !process.env.WORKER_URL) return json(500, { error: 'Missing REPLICATE_API_TOKEN or WORKER_URL' });
     if (process.env.WORKER_URL) { try { const image = await callWorkerA1111(prompt); return json(200, { image, model: 'worker-a1111' }); } catch(e){ /* fall through to Replicate */ } }
 
-    const errors = [];
+    if (process.env.RUNPOD_API_KEY && process.env.RUNPOD_ENDPOINT_ID) { try { const image = await callRunPodServerless(prompt); return json(200, { image, model: 'runpod-serverless' }); } catch(e){ /* fallthrough */ } }\n    const errors = [];
     for (let i = 0; i < MODELS.length; i++) {
       const model = MODELS[i];
       try {
