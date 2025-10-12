@@ -3,9 +3,9 @@
 
 FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel
 
-# Install IP-Adapter dependencies
+# Install IP-Adapter from GitHub (PyPI version lacks FaceID support)
 RUN pip install --no-cache-dir \
-    ip-adapter==0.1.0 \
+    git+https://github.com/tencent-ailab/IP-Adapter.git \
     insightface==0.7.3 \
     onnxruntime-gpu==1.16.3 \
     opencv-python-headless==4.8.1.78
