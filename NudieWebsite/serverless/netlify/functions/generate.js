@@ -2,7 +2,8 @@
 // Body: { prompt: string }
 // Requires env: REPLICATE_API_TOKEN
 
-const REPLICATE_API = "https://api.replicate.com/v1/predictions";
+// Use the model-specific endpoint so we don't need a hardcoded version ID
+const REPLICATE_API = "https://api.replicate.com/v1/models/stability-ai/sdxl/predictions";
 
 exports.handler = async function (event) {
   if (event.httpMethod !== "POST") {
@@ -19,9 +20,6 @@ exports.handler = async function (event) {
       return { statusCode: 500, body: JSON.stringify({ error: "Missing REPLICATE_API_TOKEN" }) };
     }
 
-    // SDXL image generation model version
-    const version = "a4a2b02b8b7f1a9f1a36dcf0d1e3bb9c1c4f3f7bba0e9b6d0e7b3b3e6f7d2d0a"; // Example placeholder; replace with current SDXL version
-
     const createRes = await fetch(REPLICATE_API, {
       method: "POST",
       headers: {
@@ -29,12 +27,10 @@ exports.handler = async function (event) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        version,
         input: {
           prompt,
           width: 768,
           height: 1024,
-          scheduler: "DPMSolver++",
           num_inference_steps: 30,
           guidance_scale: 7.5
         }
@@ -43,12 +39,12 @@ exports.handler = async function (event) {
 
     if (!createRes.ok) {
       const text = await createRes.text();
-      return { statusCode: createRes.status, body: text };
+      return { statusCode: createRes.status, body: JSON.stringify({ error: "Replicate request failed", detail: text }) };
     }
 
     const prediction = await createRes.json();
     const url = prediction.urls?.get;
-
+    
     // Poll for completion
     const started = Date.now();
     const timeoutMs = 90000; // 90s
@@ -59,12 +55,15 @@ exports.handler = async function (event) {
         headers: { "Authorization": `Token ${process.env.REPLICATE_API_TOKEN}` }
       });
       const data = await poll.json();
+      if (!poll.ok) {
+        return { statusCode: poll.status, body: JSON.stringify({ error: "Polling failed", detail: data }) };
+      }
       if (data.status === "succeeded") {
         outputUrl = Array.isArray(data.output) ? data.output[0] : data.output;
         break;
       }
       if (data.status === "failed" || data.status === "canceled") {
-        return { statusCode: 500, body: JSON.stringify({ error: "Generation failed" }) };
+        return { statusCode: 500, body: JSON.stringify({ error: "Generation failed", detail: data }) };
       }
     }
 
@@ -82,4 +81,3 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: "Server error", detail: String(err) }) };
   }
 };
-
