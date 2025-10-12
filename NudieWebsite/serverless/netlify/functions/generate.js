@@ -7,6 +7,27 @@ const API_PREDICTIONS = 'https://api.replicate.com/v1/predictions';
 const API_MODEL_VERSIONS = function(model){ return 'https://api.replicate.com/v1/models/' + model + '/versions'; };
 const MODELS = [ 'stability-ai/sdxl', 'black-forest-labs/flux-schnell' ];
 
+async function callWorkerA1111(prompt) {
+  const url = (process.env.WORKER_URL || '').replace(/\/$/, '') + '/sdapi/v1/txt2img';
+  const body = {
+    prompt: prompt,
+    negative_prompt: 'blurry, deformed, extra limbs, watermark, text, logo, bad hands, bad anatomy',
+    steps: 28,
+    cfg_scale: 7,
+    width: 768,
+    height: 1024,
+    sampler_name: 'DPM++ 2M Karras'
+  };
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error('Worker error: ' + t);
+  }
+  const data = await res.json();
+  const base64 = (data && data.images && data.images[0]) ? data.images[0] : null;
+  if (!base64) throw new Error('Worker returned no image');
+  return 'data:image/png;base64,' + base64;
+}
 exports.handler = async function (event) {
   const json = (status, obj) => ({ statusCode: status, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) });
 
@@ -19,7 +40,8 @@ exports.handler = async function (event) {
     const prompt = (parsed && typeof parsed.prompt === 'string') ? parsed.prompt : '';
     if (!prompt) return json(400, { error: 'Missing prompt' });
     const token = process.env.REPLICATE_API_TOKEN;
-    if (!token) return json(500, { error: 'Missing REPLICATE_API_TOKEN' });
+    if (!token && !process.env.WORKER_URL) return json(500, { error: 'Missing REPLICATE_API_TOKEN or WORKER_URL' });
+    if (process.env.WORKER_URL) { try { const image = await callWorkerA1111(prompt); return json(200, { image, model: 'worker-a1111' }); } catch(e){ /* fall through to Replicate */ } }
 
     const errors = [];
     for (let i = 0; i < MODELS.length; i++) {
