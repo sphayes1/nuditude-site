@@ -18,7 +18,7 @@ async function callWorkerA1111(prompt) {
     height: 1024,
     sampler_name: 'DPM++ 2M Karras'
   };
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const res = await fetch(url, { method: 'POST', headers: (function(){ const h={ 'Content-Type': 'application/json' }; const wa=process.env.WORKER_AUTH; if(wa){ const b=Buffer.from(wa).toString('base64'); h['Authorization']='Basic '+b; } return h; })(), body: JSON.stringify(body) });
   if (!res.ok) {
     const t = await res.text();
     throw new Error('Worker error: ' + t);
@@ -29,7 +29,7 @@ async function callWorkerA1111(prompt) {
   return 'data:image/png;base64,' + base64;
 }
 exports.handler = async function (event) {
-  const json = (status, obj) => ({ statusCode: status, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) });
+  const json = (status, obj) => ({ statusCode: status, headers: (function(){ const h={ 'Content-Type': 'application/json' }; const wa=process.env.WORKER_AUTH; if(wa){ const b=Buffer.from(wa).toString('base64'); h['Authorization']='Basic '+b; } return h; })(), body: JSON.stringify(obj) });
 
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204 };
   if (event.httpMethod === 'GET') return json(200, { ok: true, usage: 'POST with { prompt: string }' });
