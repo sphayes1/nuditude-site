@@ -1,4 +1,4 @@
-# IP-Adapter enabled SDXL for RunPod Serverless
+﻿# IP-Adapter enabled SDXL for RunPod Serverless
 # Using public RunPod PyTorch base image
 
 FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel
@@ -20,9 +20,9 @@ RUN mkdir -p /workspace/models/ip-adapter && \
     test -s /workspace/models/ip-adapter/ip-adapter_sdxl_vit-h.safetensors
 
 # Download FaceID Plus SDXL weight for identity locking
-RUN curl -L --fail -o /workspace/models/ip-adapter/ip-adapter-faceid-plusv2_sdxl.bin \
-    https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-faceid-plusv2_sdxl.bin && \
-    test -s /workspace/models/ip-adapter/ip-adapter-faceid-plusv2_sdxl.bin
+RUN curl -L --fail -o /workspace/models/ip-adapter/ip-adapter-faceid_sdxl.bin \
+    https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-faceid_sdxl.bin && \
+    test -s /workspace/models/ip-adapter/ip-adapter-faceid_sdxl.bin
 
 # Download image encoder
 RUN mkdir -p /workspace/models/image_encoder && \
@@ -47,3 +47,4 @@ EXPOSE 8000
 
 # Start handler
 CMD ["python", "-u", "/workspace/handler.py"]
+

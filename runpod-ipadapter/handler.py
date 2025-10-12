@@ -1,4 +1,4 @@
-"""
+﻿"""
 RunPod Serverless Handler with IP-Adapter FaceID Plus (SDXL)
 Locks identity using face embeddings from InsightFace.
 """
@@ -56,13 +56,13 @@ print("SDXL pipeline loaded successfully!")
 print("Loading FaceID (IP-Adapter) ...")
 try:
     # Preflight: verify FaceID weight exists and is non-empty; fetch if needed
-    FACEID_PATH = "/workspace/models/ip-adapter/ip-adapter-faceid-plusv2_sdxl.bin"
+    FACEID_PATH = "/workspace/models/ip-adapter/ip-adapter-faceid_sdxl.bin"
     try:
         size = os.path.getsize(FACEID_PATH) if os.path.exists(FACEID_PATH) else 0
         print(f"FaceID weight at {FACEID_PATH}, size={size} bytes")
         if size < 1024 * 1024:  # smaller than 1MB implies bad download
             import urllib.request
-            url = "https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-faceid-plusv2_sdxl.bin"
+            url = "https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-faceid_sdxl.bin"
             print("FaceID weight missing or tiny; downloading at runtime ...")
             os.makedirs(os.path.dirname(FACEID_PATH), exist_ok=True)
             urllib.request.urlretrieve(url, FACEID_PATH)
@@ -84,10 +84,10 @@ try:
         ip_ckpt=FACEID_PATH,
         device=device
     )
-    print("✓ FaceID loaded successfully!")
+    print("âœ“ FaceID loaded successfully!")
     FACEID_AVAILABLE = True
 except Exception as e:
-    print(f"⚠ FaceID failed to load: {e}")
+    print(f"âš  FaceID failed to load: {e}")
     print("Will fallback to text-only generation")
     FACEID_AVAILABLE = False
 
@@ -155,7 +155,7 @@ def handler(job):
         "prompt": "portrait, studio lighting",
         "negative_prompt": "ugly, deformed, blurry",
         "reference_image": "base64_string",   # optional, for FaceID
-        "ip_adapter_scale": 0.8,               # 0.7–0.9 identity strength
+        "ip_adapter_scale": 0.8,               # 0.7â€“0.9 identity strength
         "width": 768,
         "height": 1024,
         "num_inference_steps": 28,
@@ -236,7 +236,7 @@ def handler(job):
 
         print("Converting output to base64 ...")
         output_b64 = image_to_base64(output_image)
-        print("✓ Generation complete!")
+        print("âœ“ Generation complete!")
 
         return {
             "image": output_b64,
@@ -257,3 +257,4 @@ def handler(job):
 
 print("\nStarting RunPod serverless handler ...")
 runpod.serverless.start({"handler": handler})
+
