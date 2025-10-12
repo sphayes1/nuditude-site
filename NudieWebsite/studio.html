@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Studio • AI Boudoir</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests;" />
+  </head>
+  <body>
+    <header class="container header">
+      <div class="brand"><a href="/">Nuditude</a></div>
+      <nav class="nav">
+        <a href="/">Home</a>
+        <a aria-current="page" href="studio.html">Studio</a>
+        <a href="terms.html">Terms</a>
+        <a href="privacy.html">Privacy</a>
+      </nav>
+    </header>
+    <main class="container">
+      <h1>AI Studio (Prompt Demo)</h1>
+      <p class="note">Demo uses a hosted model. No uploads stored here. For 18+ tasteful content only.</p>
+      <div class="card">
+        <label for="prompt">Describe your photoshoot (tasteful, SFW):</label>
+        <textarea id="prompt" rows="4" style="width:100%;padding:10px;border-radius:8px;border:1px solid #2a2a35;background:#0f0f14;color:#e5e7eb;margin:6px 0 12px" placeholder="soft portrait, boudoir lighting, elegant silk robe, warm rim light, cinematic, shallow depth of field"></textarea>
+        <button id="go" class="btn btn-primary">Generate</button>
+        <span id="status" class="note" style="margin-left:10px"></span>
+      </div>
+
+      <div id="result" style="margin-top:18px;text-align:center"></div>
+    </main>
+    <footer class="container footer">
+      <div>© <span id="year"></span> AI Boudoir</div>
+      <div class="footer-links">
+        <a href="terms.html">Terms</a>
+        <a href="privacy.html">Privacy</a>
+      </div>
+    </footer>
+    <script src="assets/script.js"></script>
+    <script>
+      const btn = document.getElementById('go');
+      const promptEl = document.getElementById('prompt');
+      const statusEl = document.getElementById('status');
+      const resultEl = document.getElementById('result');
+
+      btn.addEventListener('click', async () => {
+        const prompt = (promptEl.value || '').trim();
+        if (!prompt) { alert('Please enter a prompt.'); return; }
+        statusEl.textContent = 'Generating… ~30–60s';
+        btn.disabled = true;
+        resultEl.innerHTML = '';
+        try {
+          const res = await fetch('/.netlify/functions/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Generation failed');
+          const img = document.createElement('img');
+          img.src = data.image;
+          img.alt = 'Generated image';
+          img.style.maxWidth = '100%';
+          img.style.borderRadius = '12px';
+          img.style.boxShadow = '0 10px 40px rgba(0,0,0,.4)';
+          resultEl.appendChild(img);
+          statusEl.textContent = 'Done';
+        } catch (e) {
+          statusEl.textContent = 'Error generating image';
+          console.error(e);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+  </html>

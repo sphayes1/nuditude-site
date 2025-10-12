@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Contact • AI Boudoir</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests;" />
+    <meta name="robots" content="noindex,follow" />
+  </head>
+  <body>
+    <header class="container header">
+      <div class="brand"><a href="/">Nuditude</a></div>
+      <nav class="nav">
+        <a href="/">Home</a>
+        <a href="terms.html">Terms</a>
+        <a href="privacy.html">Privacy</a>
+      </nav>
+    </header>
+    <main class="container">
+      <h1>Contact</h1>
+      <p>Questions, DMCA, or support? Email us at <a href="mailto:nuditude1@gmail.com">nuditude1@gmail.com</a>.</p>
+
+      <form class="card" method="POST" action="#">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" required style="width:100%;padding:10px;border-radius:8px;border:1px solid #2a2a35;background:#0f0f14;color:#e5e7eb;margin:6px 0 12px" />
+
+        <label for="msg">Message</label>
+        <textarea id="msg" name="message" rows="6" required style="width:100%;padding:10px;border-radius:8px;border:1px solid #2a2a35;background:#0f0f14;color:#e5e7eb;margin:6px 0 12px"></textarea>
+
+        <button class="btn btn-primary" type="submit" disabled title="Email link above is preferred for now">Send</button>
+        <p class="note">Prefer email: <a href="mailto:nuditude1@gmail.com">nuditude1@gmail.com</a>. Form processing can be added later.</p>
+      </form>
+    </main>
+    <footer class="container footer">
+      <div>© <span id="year"></span> Nuditude</div>
+      <div class="footer-links">
+        <a href="terms.html">Terms</a>
+        <a href="privacy.html">Privacy</a>
+      </div>
+    </footer>
+    <script src="assets/script.js"></script>
+  </body>
+  </html>
