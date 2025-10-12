@@ -15,19 +15,22 @@ WORKDIR /workspace
 
 # Download IP-Adapter weights at build time for faster cold starts
 RUN mkdir -p /workspace/models/ip-adapter && \
-    wget -q --show-progress -O /workspace/models/ip-adapter/ip-adapter_sdxl_vit-h.safetensors \
-    https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter_sdxl_vit-h.safetensors
+    curl -L --fail -o /workspace/models/ip-adapter/ip-adapter_sdxl_vit-h.safetensors \
+    https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter_sdxl_vit-h.safetensors && \
+    test -s /workspace/models/ip-adapter/ip-adapter_sdxl_vit-h.safetensors
 
 # Download FaceID Plus SDXL weight for identity locking
-RUN wget -q --show-progress -O /workspace/models/ip-adapter/ip-adapter-faceid-plus_sdxl.bin \
-    https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-faceid-plus_sdxl.bin || true
+RUN curl -L --fail -o /workspace/models/ip-adapter/ip-adapter-faceid-plus_sdxl.bin \
+    https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-faceid-plus_sdxl.bin && \
+    test -s /workspace/models/ip-adapter/ip-adapter-faceid-plus_sdxl.bin
 
 # Download image encoder
 RUN mkdir -p /workspace/models/image_encoder && \
-    wget -q --show-progress -O /workspace/models/image_encoder/config.json \
+    curl -L --fail -o /workspace/models/image_encoder/config.json \
     https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/image_encoder/config.json && \
-    wget -q --show-progress -O /workspace/models/image_encoder/model.safetensors \
-    https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/image_encoder/model.safetensors
+    curl -L --fail -o /workspace/models/image_encoder/model.safetensors \
+    https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/image_encoder/model.safetensors && \
+    test -s /workspace/models/image_encoder/model.safetensors
 
 # Copy handler
 COPY handler.py /workspace/handler.py

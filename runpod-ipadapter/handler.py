@@ -7,6 +7,7 @@ import runpod
 import torch
 import traceback
 import base64
+import os
 import numpy as np
 from io import BytesIO
 from PIL import Image
@@ -54,6 +55,21 @@ print("SDXL pipeline loaded successfully!")
 
 print("Loading FaceID (IP-Adapter) ...")
 try:
+    # Preflight: verify FaceID weight exists and is non-empty; fetch if needed
+    FACEID_PATH = "/workspace/models/ip-adapter/ip-adapter-faceid-plus_sdxl.bin"
+    try:
+        size = os.path.getsize(FACEID_PATH) if os.path.exists(FACEID_PATH) else 0
+        print(f"FaceID weight at {FACEID_PATH}, size={size} bytes")
+        if size < 1024 * 1024:  # smaller than 1MB implies bad download
+            import urllib.request
+            url = "https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-faceid-plus_sdxl.bin"
+            print("FaceID weight missing or tiny; downloading at runtime ...")
+            os.makedirs(os.path.dirname(FACEID_PATH), exist_ok=True)
+            urllib.request.urlretrieve(url, FACEID_PATH)
+            size = os.path.getsize(FACEID_PATH)
+            print(f"Downloaded FaceID weight, size={size} bytes")
+    except Exception as e:
+        print(f"FaceID preflight warning: {e}")
     # Start InsightFace (antelopev2)
     face_app = FaceAnalysis(
         name="antelopev2",
@@ -65,7 +81,7 @@ try:
     ip_adapter = IPAdapterFaceIDPlusXL(
         pipe,
         image_encoder_path="/workspace/models/image_encoder",
-        ip_ckpt="/workspace/models/ip-adapter/ip-adapter-faceid-plus_sdxl.bin",
+        ip_ckpt=FACEID_PATH,
         device=device
     )
     print("✓ FaceID loaded successfully!")
