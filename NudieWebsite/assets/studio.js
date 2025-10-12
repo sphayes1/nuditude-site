@@ -26,21 +26,21 @@ document.addEventListener('DOMContentLoaded', () => {
   btn.addEventListener('click', async () => {
     const prompt = (promptEl.value || '').trim();
     if (!prompt) { alert('Please enter a prompt.'); return; }
-    statusEl.textContent = 'Generating... ~30Ã¢â‚¬â€œ60s';
+    statusEl.textContent = 'Generating... ~30ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“60s';
     errorEl.textContent = '';
     btn.disabled = true;
     resultEl.innerHTML = '';
     try {
-      const res = await fetch('/.netlify/functions/generate', {
+      let ep='/api/generate';\n      let res = await fetch(ep, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt })
       });
-      const text = await res.text();
+      let text = await res.text();\n      if (!res.ok) { try {\n        // Fallback to Netlify Functions if Pages function is unavailable\n        res = await fetch('/.netlify/functions/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt }) });\n        text = await res.text();\n      } catch(_){} }
       let data; try { data = JSON.parse(text); } catch { data = { error: 'Bad response', detail: text }; }
       if (!res.ok) {
         const detail = data && data.detail ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) : '';
-        const short = detail ? (detail.length > 220 ? detail.slice(0,220)+'â€¦' : detail) : '';
+        const short = detail ? (detail.length > 220 ? detail.slice(0,220)+'Ã¢â‚¬Â¦' : detail) : '';
         throw new Error((data && data.error ? data.error : 'Generation failed') + (short ? ': '+ short : ''));
       }
       const img = document.createElement('img');
