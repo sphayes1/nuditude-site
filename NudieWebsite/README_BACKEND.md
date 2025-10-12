@@ -40,3 +40,20 @@ Safety:
 
 - Gate the studio behind Stripe Payment Links or Gumroad, then reveal `studio.html` via a unique link or email after purchase.
 
+
+## Option C: Self-hosted worker (allows adult content)
+
+Use an Automatic1111 (Stable Diffusion WebUI) pod on RunPod. You control safety filters and model choice. The site calls your worker if `WORKER_URL` is set.
+
+Steps:
+1) Create RunPod account and launch an A1111 template (20GB+ GPU). Enable public HTTP port 7860.
+2) In WebUI, enable API (Settings → API). Load an SDXL model you are licensed to use.
+3) Copy your public endpoint base URL (e.g., https://your-pod-1234.runpod.run).
+4) In Netlify → Site settings → Environment variables, add:
+   - WORKER_URL = https://your-pod-1234.runpod.run
+5) Redeploy. The function will prefer WORKER_URL and return a `data:image/png;base64,...` URL.
+
+Legal & Safety:
+- Adults only. No minors, celebrities, or non‑consensual likeness.
+- Display an age gate and consent text. Keep logs minimal.
+- If you store images, enforce auto‑deletion and user controls.
