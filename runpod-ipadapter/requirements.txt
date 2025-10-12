@@ -6,3 +6,6 @@ safetensors==0.4.1
 torch==2.1.0
 torchvision==0.16.0
 Pillow==10.1.0
+
+numpy==1.26.4
+huggingface-hub==0.19.4
