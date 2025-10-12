@@ -17,16 +17,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   (async () => {
     try {
-      const r = await fetch('/.netlify/functions/ping');
+      const r = await fetch('/api/ping');
       const t = await r.text();
-      if (r.ok && t.trim() === 'ok') statusEl.textContent = 'Generator ready';
+      if (r.ok && t.trim() === 'ok') statusEl.textContent = 'Generating... ~30–60s';
     } catch {}
   })();
 
   btn.addEventListener('click', async () => {
     const prompt = (promptEl.value || '').trim();
     if (!prompt) { alert('Please enter a prompt.'); return; }
-    statusEl.textContent = 'Generating... ~30ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“60s';
+    statusEl.textContent = 'Generating... ~30–60s';
     errorEl.textContent = '';
     btn.disabled = true;
     resultEl.innerHTML = '';
@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
       let data; try { data = JSON.parse(text); } catch { data = { error: 'Bad response', detail: text }; }
       if (!res.ok) {
         const detail = data && data.detail ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) : '';
-        const short = detail ? (detail.length > 220 ? detail.slice(0,220)+'Ã¢â‚¬Â¦' : detail) : '';
+        const short = detail ? (detail.length > 220 ? detail.slice(0,220)+'...' : detail) : '';
         throw new Error((data && data.error ? data.error : 'Generation failed') + (short ? ': '+ short : ''));
       }
       const img = document.createElement('img');
@@ -50,9 +50,9 @@ document.addEventListener('DOMContentLoaded', () => {
       img.style.borderRadius = '12px';
       img.style.boxShadow = '0 10px 40px rgba(0,0,0,.4)';
       resultEl.appendChild(img);
-      statusEl.textContent = 'Done';
+      statusEl.textContent = 'Generating... ~30–60s';
     } catch (e) {
-      statusEl.textContent = 'Error generating image';
+      statusEl.textContent = 'Generating... ~30–60s';
       errorEl.textContent = e && e.message ? e.message : 'Unknown error';
       console.error(e);
     } finally {
