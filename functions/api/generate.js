@@ -21,7 +21,6 @@ export async function onRequestPost(ctx) {
         height: 1024,
         steps: 28,
         cfg_scale: 7,
-        sampler_name: 'DPM++ 2M Karras'
       }
     };
 
@@ -53,7 +52,7 @@ export async function onRequestPost(ctx) {
         return json(200, { image, provider: 'runpod-pages' });
       }
       if (s === 'FAILED') {
-        return json(500, { error: 'RunPod job failed', detail: status });
+        const detail=(status && ((status.output && status.output.detail) || status.detail)) || status; return json(500, { error: 'RunPod job failed', detail });
       }
     }
     return json(504, { error: 'RunPod: job timed out' });
