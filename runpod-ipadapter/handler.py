@@ -1,4 +1,4 @@
-﻿"""
+"""
 RunPod Serverless Handler with IP-Adapter FaceID Plus (SDXL)
 Locks identity using face embeddings from InsightFace.
 """
@@ -54,6 +54,40 @@ pipe.enable_vae_slicing()
 print("SDXL pipeline loaded successfully!")
 
 print("Loading FaceID (IP-Adapter) ...")
+try:
+    # Preflight: ensure FaceID weight exists; try multiple URLs with retry
+    FACEID_PATH = "/workspace/models/ip-adapter/ip-adapter-faceid_sdxl.bin"
+    URLS = [
+        "https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-faceid_sdxl.bin",
+        "https://huggingface.co/h94/IP-Adapter/resolve/main/models/ip-adapter-faceid_sdxl.bin",
+        "https://raw.githubusercontent.com/h94/IP-Adapter/main/sdxl_models/ip-adapter-faceid_sdxl.bin"
+    ]
+    os.makedirs(os.path.dirname(FACEID_PATH), exist_ok=True)
+    size = os.path.getsize(FACEID_PATH) if os.path.exists(FACEID_PATH) else 0
+    if size < 1024 * 1024:
+        import time, urllib.request
+        print(f"FaceID weight missing or too small (size={size}). Downloading...")
+        ok = False
+        for url in URLS:
+            for attempt in range(3):
+                try:
+                    print(f"Downloading FaceID from {url} (attempt {attempt+1}/3)...")
+                    urllib.request.urlretrieve(url, FACEID_PATH)
+                    size = os.path.getsize(FACEID_PATH)
+                    print(f"Downloaded size={size} bytes")
+                    if size >= 1024 * 1024:
+                        ok = True
+                        break
+                    time.sleep(1)
+                except Exception as de:
+                    print(f"Download error: {de}")
+                    time.sleep(1)
+            if ok:
+                break
+        if not ok:
+            print("Failed to download FaceID weight from all URLs. Continuing without FaceID.")
+except Exception as e:
+    print(f"FaceID preflight warning: {e}")
 try:
     # Preflight: verify FaceID weight exists and is non-empty; fetch if needed
     FACEID_PATH = "/workspace/models/ip-adapter/ip-adapter-faceid_sdxl.bin"
