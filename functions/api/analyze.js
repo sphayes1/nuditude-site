@@ -26,9 +26,19 @@ export async function onRequestPost(context) {
       });
     }
 
-    // Convert image to base64
+    // Convert image to base64 (Cloudflare Workers compatible method)
     const arrayBuffer = await imageFile.arrayBuffer();
-    const base64Image = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    const bytes = new Uint8Array(arrayBuffer);
+
+    // Convert bytes to base64 string
+    let binary = '';
+    const chunkSize = 0x8000; // 32KB chunks to avoid stack overflow
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+      binary += String.fromCharCode.apply(null, chunk);
+    }
+    const base64Image = btoa(binary);
+
     const mimeType = imageFile.type || 'image/jpeg';
     const dataUrl = `data:${mimeType};base64,${base64Image}`;
 
@@ -127,7 +137,8 @@ export async function onRequestPost(context) {
     console.error("Analyze error:", err);
     return new Response(JSON.stringify({
       error: "Server error",
-      detail: String(err)
+      detail: err.message || String(err),
+      stack: err.stack
     }), {
       status: 500,
       headers: { "Content-Type": "application/json" }

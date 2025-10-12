@@ -83,7 +83,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const analyzeData = await analyzeRes.json();
 
       if (!analyzeRes.ok) {
-        throw new Error(analyzeData.error || 'Analysis failed');
+        const errorMsg = analyzeData.error || 'Analysis failed';
+        const detail = analyzeData.detail ? ` - ${analyzeData.detail}` : '';
+        console.error('Analysis error:', analyzeData);
+        throw new Error(errorMsg + detail);
       }
 
       const enhancedPrompt = analyzeData.prompt;
