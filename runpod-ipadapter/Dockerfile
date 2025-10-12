@@ -20,9 +20,9 @@ RUN mkdir -p /workspace/models/ip-adapter && \
     test -s /workspace/models/ip-adapter/ip-adapter_sdxl_vit-h.safetensors
 
 # Download FaceID Plus SDXL weight for identity locking
-RUN curl -L --fail -o /workspace/models/ip-adapter/ip-adapter-faceid-plus_sdxl.bin \
-    https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-faceid-plus_sdxl.bin && \
-    test -s /workspace/models/ip-adapter/ip-adapter-faceid-plus_sdxl.bin
+RUN curl -L --fail -o /workspace/models/ip-adapter/ip-adapter-faceid-plusv2_sdxl.bin \
+    https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-faceid-plusv2_sdxl.bin && \
+    test -s /workspace/models/ip-adapter/ip-adapter-faceid-plusv2_sdxl.bin
 
 # Download image encoder
 RUN mkdir -p /workspace/models/image_encoder && \
