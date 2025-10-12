@@ -111,10 +111,15 @@ try:
     print("âœ“ FaceID loaded successfully!")
     FACEID_AVAILABLE = True
 except Exception as e:
-    print(f"âš  FaceID failed to load: {e}")
+    import traceback as tb
+    print("FaceID failed to load:")
+    print(f"Error type: {type(e).__name__}")
+    print(f"Error message: {str(e)}")
+    print("Full traceback:")
+    tb.print_exc()
     print("Will fallback to text-only generation")
-    FACEID_AVAILABLE = False
 
+    FACEID_AVAILABLE = False
 print("=" * 60)
 print("Worker ready! Waiting for jobs...")
 print("=" * 60)
