@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
   btn.addEventListener('click', async () => {
     const prompt = (promptEl.value || '').trim();
     if (!prompt) { alert('Please enter a prompt.'); return; }
-    statusEl.textContent = 'Generating... ~30â€“60s';
+    statusEl.textContent = 'Generating... ~30Ã¢â‚¬â€œ60s';
     errorEl.textContent = '';
     btn.disabled = true;
     resultEl.innerHTML = '';
@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
       let data; try { data = JSON.parse(text); } catch { data = { error: 'Bad response', detail: text }; }
       if (!res.ok) {
         const detail = data && data.detail ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) : '';
-        const short = detail ? (detail.length > 220 ? detail.slice(0,220)+'…' : detail) : '';
+        const short = detail ? (detail.length > 220 ? detail.slice(0,220)+'â€¦' : detail) : '';
         throw new Error((data && data.error ? data.error : 'Generation failed') + (short ? ': '+ short : ''));
       }
       const img = document.createElement('img');

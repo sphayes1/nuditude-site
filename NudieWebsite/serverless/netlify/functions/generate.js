@@ -9,7 +9,7 @@ const MODELS = [
   'black-forest-labs/flux-schnell'
 ];
 
-exports.handler = async function (event) {
+exports.handler = async function (event) {\n  const log = (...a) => { try { console.log(...a); } catch {} };
   const json = (status, obj) => ({ statusCode: status, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) });
 
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204 };
@@ -25,7 +25,7 @@ exports.handler = async function (event) {
     const headers = { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' };
     const errors = [];
 
-    for (const model of MODELS) {
+    for (const model of MODELS) {\n      log('try model', model);
       try {
         // 1) Fetch latest version for this model
         const vres = await fetch(API_MODEL_VERSIONS(model), { headers: { 'Authorization': `Token ${token}` } });
@@ -40,7 +40,7 @@ exports.handler = async function (event) {
         if (!vid) { errors.push({ model, step: 'versions', status: 'no-version' }); continue; }
 
         // 2) Create prediction with minimal inputs for max compatibility
-        const createRes = await fetch(API_PREDICTIONS, {
+        log('creating prediction for', model, 'version', vid);\n        const createRes = await fetch(API_PREDICTIONS, {
           method: 'POST',
           headers,
           body: JSON.stringify({ version: vid, input: { prompt } })
@@ -51,7 +51,7 @@ exports.handler = async function (event) {
           continue;
         }
 
-        const prediction = await createRes.json();
+        const prediction = await createRes.json();\n        log('prediction created', prediction && prediction.id ? prediction.id : 'no-id');
         const url = prediction.urls?.get;
         if (!url) { errors.push({ model, step: 'create', status: 'no-url', detail: prediction }); continue; }
 
@@ -79,7 +79,7 @@ exports.handler = async function (event) {
       }
     }
 
-    return json(502, { error: 'All models failed', attempts: errors });
+    log('all attempts failed', errors);\n    return json(502, { error: 'All models failed', attempts: errors });
   } catch (err) {
     return json(500, { error: 'Server error', detail: String(err) });
   }
