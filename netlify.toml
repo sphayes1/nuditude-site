@@ -1,4 +1,4 @@
-﻿[build]
+[build]
   base = "NudieWebsite"
   publish = "."
   command = ""
@@ -7,9 +7,10 @@
   directory = "serverless/netlify/functions"
   node_bundler = "esbuild"
 
+[build.environment]
+  NODE_VERSION = "18"
+
 [[headers]]
   for = "/studio.html"
   [headers.values]
     Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests;"
-[build.environment]
-  NODE_VERSION = "18"
