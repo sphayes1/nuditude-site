@@ -18,15 +18,25 @@
       </nav>
     </header>
     <main class="container">
-      <h1>AI Studio (Prompt Demo)</h1>
-      <p class="note">Demo uses a hosted model. No uploads stored here. For 18+ tasteful content only.</p>
+      <h1>AI Studio</h1>
+      <p class="note">Upload an image for AI analysis, or write your own prompt. For 18+ tasteful content only. Images are not stored.</p>
+
       <div class="card">
-        <label for="prompt">Describe your photoshoot (tasteful, SFW):</label>
-        <textarea id="prompt" rows="4" style="width:100%;padding:10px;border-radius:8px;border:1px solid #2a2a35;background:#0f0f14;color:#e5e7eb;margin:6px 0 12px" placeholder="soft portrait, boudoir lighting, elegant silk robe, warm rim light, cinematic, shallow depth of field"></textarea>
-        <button id="go" class="btn btn-primary">Generate</button>
-        <span id="status" class="note" style="margin-left:10px"></span>
+        <h3 style="margin-top:0">Option 1: Upload Image (Recommended)</h3>
+        <p class="note" style="font-size:0.9em">Upload a photo and AI will analyze it to create a stylized prompt</p>
+        <input type="file" id="imageUpload" accept="image/jpeg,image/png,image/webp" style="margin-bottom:12px" />
+        <div id="preview" style="margin:12px 0;text-align:center"></div>
+        <button id="analyzeBtn" class="btn btn-primary" disabled>Analyze & Generate</button>
       </div>
 
+      <div class="card" style="margin-top:20px">
+        <h3 style="margin-top:0">Option 2: Write Your Own Prompt</h3>
+        <label for="prompt">Describe your photoshoot:</label>
+        <textarea id="prompt" rows="4" style="width:100%;padding:10px;border-radius:8px;border:1px solid #2a2a35;background:#0f0f14;color:#e5e7eb;margin:6px 0 12px" placeholder="soft portrait, boudoir lighting, elegant silk robe, warm rim light, cinematic, shallow depth of field"></textarea>
+        <button id="generateBtn" class="btn btn-primary">Generate from Prompt</button>
+      </div>
+
+      <div id="status" class="note" style="margin-top:18px;text-align:center;font-size:1.1em"></div>
       <div id="result" style="margin-top:18px;text-align:center"></div>
     </main>
     <footer class="container footer">
@@ -37,41 +47,6 @@
       </div>
     </footer>
     <script src="assets/script.js"></script>
-    <script>
-      const btn = document.getElementById('go');
-      const promptEl = document.getElementById('prompt');
-      const statusEl = document.getElementById('status');
-      const resultEl = document.getElementById('result');
-
-      btn.addEventListener('click', async () => {
-        const prompt = (promptEl.value || '').trim();
-        if (!prompt) { alert('Please enter a prompt.'); return; }
-        statusEl.textContent = 'Generating… ~30–60s';
-        btn.disabled = true;
-        resultEl.innerHTML = '';
-        try {
-          const res = await fetch('/api/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt })
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Generation failed');
-          const img = document.createElement('img');
-          img.src = data.image;
-          img.alt = 'Generated image';
-          img.style.maxWidth = '100%';
-          img.style.borderRadius = '12px';
-          img.style.boxShadow = '0 10px 40px rgba(0,0,0,.4)';
-          resultEl.appendChild(img);
-          statusEl.textContent = 'Done';
-        } catch (e) {
-          statusEl.textContent = 'Error generating image';
-          console.error(e);
-        } finally {
-          btn.disabled = false;
-        }
-      });
-    </script>
+    <script src="assets/studio.js"></script>
   </body>
   </html>
