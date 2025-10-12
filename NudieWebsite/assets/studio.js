@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const imageUpload = document.getElementById('imageUpload');
   const preview = document.getElementById('preview');
   const generateBtn = document.getElementById('generateBtn');
+  const extraSpicyBtn = document.getElementById('extraSpicyBtn');
   const nextLevelBtn = document.getElementById('nextLevelBtn');
   const statusEl = document.getElementById('status');
   const resultEl = document.getElementById('result');
@@ -13,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentSpiceLevel = 1;
   let lastGeneratedImage = null;
   let baseDescription = null; // Store the original description to maintain likeness
+  let detectedStartLevel = 1; // Smart detection of starting clothing level
 
   // Health check
   (async () => {
@@ -56,8 +58,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     selectedFile = file;
     generateBtn.disabled = false;
+    extraSpicyBtn.disabled = false;
+    extraSpicyBtn.style.display = 'inline-block';
     currentSpiceLevel = 1;
     baseDescription = null; // Reset description for new image
+    detectedStartLevel = 1;
     nextLevelBtn.style.display = 'none';
     resultEl.innerHTML = '';
 
@@ -77,9 +82,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     generateBtn.disabled = true;
+    extraSpicyBtn.disabled = true;
     nextLevelBtn.disabled = true;
     resultEl.innerHTML = '';
-    statusEl.textContent = '🎨 Creating your artistic transformation... ~30-60s';
+
+    const isExtraSpicy = (spiceLevel === 4 && currentSpiceLevel === 1);
+    if (isExtraSpicy) {
+      statusEl.textContent = '🔥🔥🔥 Extra Spicy mode! Going straight to maximum... ~30-60s';
+    } else {
+      statusEl.textContent = '🎨 Creating your artistic transformation... ~30-60s';
+    }
     statusEl.style.color = '';
 
     try {
@@ -161,11 +173,13 @@ document.addEventListener('DOMContentLoaded', () => {
         statusEl.textContent = '🔥💯 Maximum spice level reached!';
         statusEl.style.color = '#ef4444';
         nextLevelBtn.style.display = 'none';
+        extraSpicyBtn.style.display = 'none';
       } else {
         statusEl.textContent = '✅ Done! Want to make it even spicier?';
         statusEl.style.color = '#10b981';
         nextLevelBtn.style.display = 'inline-block';
         nextLevelBtn.disabled = false;
+        extraSpicyBtn.style.display = 'none'; // Hide after first generation
       }
 
     } catch (e) {
@@ -182,7 +196,14 @@ document.addEventListener('DOMContentLoaded', () => {
     generateImage(1); // Start at spice level 1
   });
 
-  // Handle "Make it Spicier" button
+  // Handle "Extra Spicy" button (premium - skip straight to level 4)
+  extraSpicyBtn.addEventListener('click', () => {
+    if (confirm('Extra Spicy costs 2 credits and skips straight to maximum spice level. Continue?')) {
+      generateImage(4); // Go directly to level 4
+    }
+  });
+
+  // Handle "Next Level" button
   nextLevelBtn.addEventListener('click', () => {
     generateImage(currentSpiceLevel);
   });

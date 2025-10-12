@@ -23,11 +23,15 @@
 
       <div class="card">
         <h3 style="margin-top:0">Upload Your Photo</h3>
-        <p class="note" style="font-size:0.9em">Each generation creates a more artistic, intimate version. Run multiple times for progressive results.</p>
+        <p class="note" style="font-size:0.9em">Smart AI detects your starting point and creates progressively intimate versions. Each click = 1 credit.</p>
         <input type="file" id="imageUpload" accept="image/jpeg,image/png,image/webp" style="margin-bottom:12px" />
         <div id="preview" style="margin:12px 0;text-align:center"></div>
-        <button id="generateBtn" class="btn btn-primary" disabled>Generate</button>
-        <button id="nextLevelBtn" class="btn" style="margin-left:10px;display:none">Make it Spicier 🔥</button>
+        <div style="margin-top:12px">
+          <button id="generateBtn" class="btn btn-primary" disabled>Generate (1 credit)</button>
+          <button id="extraSpicyBtn" class="btn" style="margin-left:10px;background:#ef4444;color:white;display:none" disabled>🔥 Extra Spicy (2 credits)</button>
+          <button id="nextLevelBtn" class="btn" style="margin-left:10px;display:none">Next Level 🔥</button>
+        </div>
+        <p class="note" style="font-size:0.8em;margin-top:8px;color:#888">"Extra Spicy" skips straight to maximum spice level</p>
       </div>
 
       <div id="status" class="note" style="margin-top:18px;text-align:center;font-size:1.1em"></div>

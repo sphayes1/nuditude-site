@@ -61,7 +61,7 @@ export async function onRequestPost(context) {
               content: [
                 {
                   type: "text",
-                  text: "Describe this person's appearance in detail. Focus on: physical features, clothing style, pose, lighting, and setting. Be factual and neutral. Do not include names or identify individuals."
+                  text: "Analyze this image and provide:\n1. FACE: Detailed facial features (eye color, face shape, hair color/style, facial hair, skin tone, distinctive features)\n2. BODY: Body type, posture\n3. CLOTHING: Current clothing level (fully clothed/partially clothed/swimsuit/lingerie/underwear/nude)\n4. SETTING: Background, lighting, mood\n\nBe extremely detailed about facial features to ensure likeness preservation. Start with 'FACE:' then describe."
                 },
                 {
                   type: "image_url",
@@ -88,6 +88,25 @@ export async function onRequestPost(context) {
       description = visionData.choices[0].message.content;
 
       console.log("Image description:", description);
+
+      // Detect starting clothing level from description
+      const descLower = description.toLowerCase();
+      let detectedLevel = 1;
+
+      if (descLower.includes('nude') || descLower.includes('naked') || descLower.includes('unclothed')) {
+        detectedLevel = 4;
+      } else if (descLower.includes('lingerie') || descLower.includes('underwear') || descLower.includes('bra') || descLower.includes('panties')) {
+        detectedLevel = 2;
+      } else if (descLower.includes('swimsuit') || descLower.includes('bikini') || descLower.includes('swim wear')) {
+        detectedLevel = 2;
+      }
+
+      console.log("Detected clothing level:", detectedLevel);
+
+      // If already at a higher level, adjust the requested spice level
+      if (detectedLevel > 1 && spiceLevel === 1) {
+        console.log(`Image already at level ${detectedLevel}, skipping ahead`);
+      }
     } else if (description) {
       console.log("Using cached base description to maintain likeness");
     } else {
@@ -121,11 +140,11 @@ export async function onRequestPost(context) {
         messages: [
           {
             role: "system",
-            content: "You are an expert at writing AI image generation prompts for artistic boudoir photography. Convert factual descriptions into artistic, stylized prompts suitable for Stable Diffusion XL. Focus on artistic style, lighting, mood, and composition. Always maintain artistic taste and sophistication."
+            content: "You are an expert at writing AI image generation prompts for artistic boudoir photography. You MUST preserve facial likeness by being extremely detailed about facial features. Start every prompt with detailed facial descriptions, then body, then clothing/pose/setting."
           },
           {
             role: "user",
-            content: `Based on this person's description:\n${description}\n\nCreate a detailed Stable Diffusion prompt following these guidelines:\n${currentInstruction}\n\nInclude: artistic style, lighting (soft, rim, dramatic), mood, composition, camera angle. Use photography terms like 'bokeh', 'shallow depth of field', 'cinematic lighting'.\n\nOutput ONLY the prompt, no explanation or preamble.`
+            content: `Based on this person's description:\n${description}\n\nCreate a detailed Stable Diffusion XL prompt following these guidelines:\n${currentInstruction}\n\nIMPORTANT STRUCTURE:\n1. START with face: Describe all facial features in extreme detail (eyes, face shape, hair, facial hair, skin tone, nose, lips, jawline, cheekbones)\n2. Then body type and posture\n3. Then clothing level and style per guidelines\n4. Then pose, setting, lighting (soft rim light, bokeh, shallow depth of field)\n5. Then artistic style (professional photography, cinematic, elegant)\n\nBe VERY specific about facial features to maintain likeness across generations.\n\nOutput ONLY the prompt, no explanation.`
           }
         ],
         max_tokens: 250,
