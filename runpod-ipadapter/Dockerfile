@@ -19,10 +19,8 @@ RUN mkdir -p /workspace/models/ip-adapter && \
     https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter_sdxl_vit-h.safetensors && \
     test -s /workspace/models/ip-adapter/ip-adapter_sdxl_vit-h.safetensors
 
-# Download FaceID Plus SDXL weight for identity locking
-RUN curl -L --fail -o /workspace/models/ip-adapter/ip-adapter-faceid_sdxl.bin \
-    https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-faceid_sdxl.bin && \
-    test -s /workspace/models/ip-adapter/ip-adapter-faceid_sdxl.bin
+# FaceID weight is downloaded at runtime by handler.py (see lines 58-90)
+# This allows for robust retry logic and multiple fallback URLs
 
 # Download image encoder
 RUN mkdir -p /workspace/models/image_encoder && \
