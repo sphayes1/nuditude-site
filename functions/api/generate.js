@@ -7,7 +7,7 @@ export async function onRequestPost(context) {
 
   try {
     const body = await request.json();
-    const { prompt } = body;
+    const { prompt, referenceImage, ipAdapterScale } = body;
 
     if (!prompt || typeof prompt !== "string") {
       return new Response(JSON.stringify({ error: "Missing prompt" }), {
@@ -15,6 +15,9 @@ export async function onRequestPost(context) {
         headers: { "Content-Type": "application/json" }
       });
     }
+
+    console.log("Reference image provided:", !!referenceImage);
+    console.log("IP-Adapter scale:", ipAdapterScale || "default (0.7)");
 
     if (!env.RUNPOD_API_KEY) {
       return new Response(JSON.stringify({ error: "Missing RUNPOD_API_KEY" }), {
@@ -44,6 +47,8 @@ export async function onRequestPost(context) {
         input: {
           prompt: prompt,
           negative_prompt: "ugly, deformed, blurry, low quality, distorted, nsfw explicit",
+          reference_image: referenceImage || null, // NEW: For IP-Adapter
+          ip_adapter_scale: ipAdapterScale || 0.7, // NEW: Default to 0.7
           width: 768,
           height: 1024,
           num_inference_steps: 30,

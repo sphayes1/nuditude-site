@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentSpiceLevel = 1;
   let lastGeneratedImage = null;
   let baseDescription = null; // Store the original description to maintain likeness
+  let referenceImageBase64 = null; // Store for IP-Adapter facial preservation
   let detectedStartLevel = 1; // Smart detection of starting clothing level
 
   // Health check
@@ -62,6 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
     extraSpicyBtn.style.display = 'inline-block';
     currentSpiceLevel = 1;
     baseDescription = null; // Reset description for new image
+    referenceImageBase64 = null; // Reset reference image
     detectedStartLevel = 1;
     nextLevelBtn.style.display = 'none';
     resultEl.innerHTML = '';
@@ -128,10 +130,16 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log('Enhanced prompt:', enhancedPrompt);
       console.log('Spice level:', analyzeData.spiceLevel);
 
-      // Store the base description from first generation
+      // Store the base description AND reference image from first generation
       if (spiceLevel === 1 && analyzeData.originalDescription) {
         baseDescription = analyzeData.originalDescription;
         console.log('Stored base description for likeness preservation');
+      }
+
+      // Store reference image for IP-Adapter (only on first analysis)
+      if (analyzeData.referenceImage && !referenceImageBase64) {
+        referenceImageBase64 = analyzeData.referenceImage;
+        console.log('Stored reference image for IP-Adapter facial preservation');
       }
 
       // Show prompt in debug section (hidden by default)
@@ -139,13 +147,17 @@ document.addEventListener('DOMContentLoaded', () => {
         promptText.textContent = enhancedPrompt;
       }
 
-      // Step 2: Generate image from the prompt
-      statusEl.textContent = '🔥 Generating your image... ~30-60s';
+      // Step 2: Generate image from the prompt with IP-Adapter reference
+      statusEl.textContent = '🔥 Generating your image with facial preservation... ~30-60s';
 
       const generateRes = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: enhancedPrompt })
+        body: JSON.stringify({
+          prompt: enhancedPrompt,
+          referenceImage: referenceImageBase64, // IP-Adapter facial preservation
+          ipAdapterScale: 0.7 // Optimal balance
+        })
       });
 
       const generateData = await generateRes.json();

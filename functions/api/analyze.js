@@ -25,6 +25,7 @@ export async function onRequestPost(context) {
     console.log("Base description provided:", !!baseDescription);
 
     let description = baseDescription;
+    let referenceImageBase64 = null; // Store for IP-Adapter
 
     // Only analyze image with Vision API if we don't have a base description
     if (!description && imageFile) {
@@ -42,6 +43,7 @@ export async function onRequestPost(context) {
         binary += String.fromCharCode.apply(null, chunk);
       }
       const base64Image = btoa(binary);
+      referenceImageBase64 = base64Image; // Store for IP-Adapter
 
       const mimeType = imageFile.type || 'image/jpeg';
       const dataUrl = `data:${mimeType};base64,${base64Image}`;
@@ -165,10 +167,11 @@ export async function onRequestPost(context) {
 
     console.log("Enhanced prompt:", enhancedPrompt);
 
-    // Return the enhanced prompt with spice level
+    // Return the enhanced prompt with spice level AND reference image for IP-Adapter
     return new Response(JSON.stringify({
       prompt: enhancedPrompt,
       originalDescription: description,
+      referenceImage: referenceImageBase64, // NEW: For IP-Adapter facial preservation
       spiceLevel: spiceLevel,
       nextSpiceLevel: Math.min(spiceLevel + 1, 4),
       maxLevel: spiceLevel >= 4
