@@ -26,7 +26,7 @@ FACEID_CLASS = None
 FACEID_FILENAME = None
 FACEID_CANDIDATES = [
     ("IPAdapterFaceIDPlusV2XL", "ip-adapter-faceid-plusv2_sdxl.bin"),
-    ("IPAdapterFaceIDPlusXL", "ip-adapter-faceid-plus_sdxl.bin"),
+    ("IPAdapterFaceIDPlusXL", "ip-adapter-faceid-plusv2_sdxl.bin"),
     ("IPAdapterFaceIDXL", "ip-adapter-faceid_sdxl.bin")
 ]
 for class_name, filename in FACEID_CANDIDATES:
@@ -106,7 +106,7 @@ try:
         ip_ckpt=FACEID_PATH,
         device=device
     )
-    print("âœ“ FaceID loaded successfully!")
+    print("Ã¢Å“â€œ FaceID loaded successfully!")
     FACEID_AVAILABLE = True
 except Exception as e:
     print("FaceID failed to load:")
@@ -242,7 +242,7 @@ def handler(job):
 
         print("Converting output to base64 ...")
         output_b64 = image_to_base64(output_image)
-        print("âœ“ Generation complete!")
+        print("Ã¢Å“â€œ Generation complete!")
 
         return {
             "image": output_b64,
