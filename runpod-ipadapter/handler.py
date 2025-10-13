@@ -1,26 +1,41 @@
 """
-RunPod Serverless Handler with IP-Adapter FaceID Plus (SDXL)
+RunPod Serverless Handler with IP-Adapter FaceID (SDXL)
 Locks identity using face embeddings from InsightFace.
 """
 
-import runpod
-import torch
-import traceback
 import base64
 import os
-import numpy as np
+import traceback
 from io import BytesIO
-from PIL import Image
-from diffusers import StableDiffusionXLPipeline, AutoencoderKL
 
-# InsightFace for face detection/embeddings
+import numpy as np
+import runpod
+import torch
+from PIL import Image
+from diffusers import AutoencoderKL, StableDiffusionXLPipeline
 from insightface.app import FaceAnalysis
 
-# FaceID Plus for SDXL (import path can vary by version)
+# Dynamically select the FaceID class/weight available in ip_adapter package
 try:
-    from ip_adapter.ip_adapter_faceid import IPAdapterFaceIDPlusXL
-except Exception:  # fallback if packaged differently
-    from ip_adapter import IPAdapterFaceIDPlusXL
+    from ip_adapter import ip_adapter_faceid as faceid_module
+except ImportError:
+    import ip_adapter.ip_adapter_faceid as faceid_module  # type: ignore
+
+FACEID_CLASS = None
+FACEID_FILENAME = None
+FACEID_CANDIDATES = [
+    ("IPAdapterFaceIDPlusV2XL", "ip-adapter-faceid-plusv2_sdxl.bin"),
+    ("IPAdapterFaceIDPlusXL", "ip-adapter-faceid-plus_sdxl.bin"),
+    ("IPAdapterFaceIDXL", "ip-adapter-faceid_sdxl.bin")
+]
+for class_name, filename in FACEID_CANDIDATES:
+    if hasattr(faceid_module, class_name):
+        FACEID_CLASS = getattr(faceid_module, class_name)
+        FACEID_FILENAME = filename
+        print(f"Selected FaceID class: {class_name} with weight {filename}")
+        break
+if FACEID_CLASS is None or FACEID_FILENAME is None:
+    raise ImportError("No suitable FaceID class available in ip_adapter.faceid")
 
 print("=" * 60)
 print("Initializing SDXL + FaceID Worker")
@@ -30,14 +45,12 @@ print("=" * 60)
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
 
-# Load VAE (better quality)
 print("Loading VAE...")
 vae = AutoencoderKL.from_pretrained(
     "madebyollin/sdxl-vae-fp16-fix",
     torch_dtype=torch.float16
 )
 
-# Load SDXL pipeline
 print("Loading SDXL pipeline...")
 pipe = StableDiffusionXLPipeline.from_pretrained(
     "stabilityai/stable-diffusion-xl-base-1.0",
@@ -46,32 +59,30 @@ pipe = StableDiffusionXLPipeline.from_pretrained(
     variant="fp16",
     use_safetensors=True
 ).to(device)
-
-# Memory optimizations
 pipe.enable_xformers_memory_efficient_attention()
 pipe.enable_vae_slicing()
-
 print("SDXL pipeline loaded successfully!")
 
 print("Loading FaceID (IP-Adapter) ...")
 try:
-    # Preflight: ensure FaceID weight exists; try multiple URLs with retry
-    # Note: FaceID weights are in the IP-Adapter-FaceID repository, not IP-Adapter
-    FACEID_PATH = "/workspace/models/ip-adapter/ip-adapter-faceid-plusv2_sdxl.bin"
+    FACEID_PATH = f"/workspace/models/ip-adapter/{FACEID_FILENAME}"
     URLS = [
-        "https://huggingface.co/h94/IP-Adapter-FaceID/resolve/main/ip-adapter-faceid-plusv2_sdxl.bin",
-        "https://huggingface.co/h94/IP-Adapter-FaceID/resolve/main/ip-adapter-faceid_sdxl.bin",
+        f"https://huggingface.co/h94/IP-Adapter-FaceID/resolve/main/{FACEID_FILENAME}",
+        f"https://huggingface.co/h94/IP-Adapter-FaceID/resolve/main/sdxl_models/{FACEID_FILENAME}",
+        f"https://raw.githubusercontent.com/h94/IP-Adapter-FaceID/main/{FACEID_FILENAME}"
     ]
     os.makedirs(os.path.dirname(FACEID_PATH), exist_ok=True)
     size = os.path.getsize(FACEID_PATH) if os.path.exists(FACEID_PATH) else 0
     if size < 1024 * 1024:
-        import time, urllib.request
+        import time
+        import urllib.request
+
         print(f"FaceID weight missing or too small (size={size}). Downloading...")
         ok = False
         for url in URLS:
             for attempt in range(3):
                 try:
-                    print(f"Downloading FaceID from {url} (attempt {attempt+1}/3)...")
+                    print(f"Downloading FaceID from {url} (attempt {attempt + 1}/3)...")
                     urllib.request.urlretrieve(url, FACEID_PATH)
                     size = os.path.getsize(FACEID_PATH)
                     print(f"Downloaded size={size} bytes")
@@ -88,52 +99,47 @@ try:
             print("Failed to download FaceID weight from all URLs. Continuing without FaceID.")
 except Exception as e:
     print(f"FaceID preflight warning: {e}")
+
 try:
-    # Verify FaceID weight downloaded successfully
     size = os.path.getsize(FACEID_PATH) if os.path.exists(FACEID_PATH) else 0
     print(f"FaceID weight at {FACEID_PATH}, size={size} bytes")
     if size < 1024 * 1024:
         raise Exception(f"FaceID weight file is too small ({size} bytes) or missing")
-    # Start InsightFace (buffalo_l works reliably on Linux/Docker)
-    # antelopev2 has known AssertionError issues on Linux
+
     face_app = FaceAnalysis(
         name="buffalo_l",
         providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
     )
     face_app.prepare(ctx_id=0, det_size=(640, 640))
 
-    # Load FaceID Plus SDXL adapter
-    ip_adapter = IPAdapterFaceIDPlusXL(
+    ip_adapter = FACEID_CLASS(
         pipe,
         image_encoder_path="/workspace/models/image_encoder",
         ip_ckpt=FACEID_PATH,
         device=device
     )
-    print("âœ“ FaceID loaded successfully!")
+    print("✓ FaceID loaded successfully!")
     FACEID_AVAILABLE = True
 except Exception as e:
-    import traceback as tb
     print("FaceID failed to load:")
     print(f"Error type: {type(e).__name__}")
     print(f"Error message: {str(e)}")
     print("Full traceback:")
-    tb.print_exc()
+    traceback.print_exc()
     print("Will fallback to text-only generation")
-
     FACEID_AVAILABLE = False
+
 print("=" * 60)
 print("Worker ready! Waiting for jobs...")
 print("=" * 60)
 
 
 def decode_base64_image(base64_string: str):
-    """Convert base64 string to PIL Image."""
     try:
         if "," in base64_string:
             base64_string = base64_string.split(",", 1)[1]
         image_data = base64.b64decode(base64_string)
         image = Image.open(BytesIO(image_data)).convert("RGB")
-        # Resize if too large (for memory)
         max_size = 1024
         if image.width > max_size or image.height > max_size:
             image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
@@ -145,7 +151,6 @@ def decode_base64_image(base64_string: str):
 
 
 def image_to_base64(image: Image.Image) -> str:
-    """Convert PIL Image to base64 string."""
     buffered = BytesIO()
     image.save(buffered, format="PNG", optimize=True)
     return base64.b64encode(buffered.getvalue()).decode()
@@ -165,7 +170,6 @@ def get_face_embedding(pil_image: Image.Image):
         if not faces:
             print("No face detected in reference image")
             return None
-        # choose largest face
         faces.sort(key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
         emb = faces[0].normed_embedding
         if emb is None:
@@ -177,22 +181,6 @@ def get_face_embedding(pil_image: Image.Image):
 
 
 def handler(job):
-    """
-    RunPod serverless handler
-
-    Expected input:
-    {
-        "prompt": "portrait, studio lighting",
-        "negative_prompt": "ugly, deformed, blurry",
-        "reference_image": "base64_string",   # optional, for FaceID
-        "ip_adapter_scale": 0.8,               # 0.7â€“0.9 identity strength
-        "width": 768,
-        "height": 1024,
-        "num_inference_steps": 28,
-        "guidance_scale": 4.5,
-        "seed": null
-    }
-    """
     job_input = job.get("input", {})
 
     try:
@@ -266,7 +254,7 @@ def handler(job):
 
         print("Converting output to base64 ...")
         output_b64 = image_to_base64(output_image)
-        print("âœ“ Generation complete!")
+        print("✓ Generation complete!")
 
         return {
             "image": output_b64,
@@ -287,4 +275,3 @@ def handler(job):
 
 print("\nStarting RunPod serverless handler ...")
 runpod.serverless.start({"handler": handler})
-
