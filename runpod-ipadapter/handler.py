@@ -16,10 +16,9 @@ from diffusers import AutoencoderKL, StableDiffusionXLPipeline
 from huggingface_hub import hf_hub_download
 from insightface.app import FaceAnalysis
 
-# Discover FaceID classes/weights in ip_adapter package
 try:
     from ip_adapter import ip_adapter_faceid as faceid_module
-except ImportError:  # fallback for older installs
+except ImportError:
     import ip_adapter.ip_adapter_faceid as faceid_module  # type: ignore
 
 FACEID_CANDIDATES = [
@@ -34,7 +33,7 @@ AVAILABLE_FACEID_CANDIDATES = [
 ]
 
 if not AVAILABLE_FACEID_CANDIDATES:
-    print("Warning: no FaceID classes found in ip_adapter; will run text-only.")
+    print("Warning: no FaceID classes found in ip_adapter; running text-only.")
 
 print("=" * 60)
 print("Initializing SDXL + FaceID Worker")
@@ -126,7 +125,7 @@ for faceid_class, weight_filename, class_name in AVAILABLE_FACEID_CANDIDATES:
         continue
 
 if not FACEID_AVAILABLE:
-    print("FaceID unavailable:", faceid_error)
+    print(f"FaceID unavailable: {faceid_error}")
     print("Continuing in text-only mode.")
 
 print("=" * 60)
