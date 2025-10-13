@@ -94,11 +94,10 @@ try:
     print(f"FaceID weight at {FACEID_PATH}, size={size} bytes")
     if size < 1024 * 1024:
         raise Exception(f"FaceID weight file is too small ({size} bytes) or missing")
-    # Start InsightFace (antelopev2)  
-    # Pass allowed_modules=None to skip assertion, then it auto-loads all models
+    # Start InsightFace (buffalo_l works reliably on Linux/Docker)
+    # antelopev2 has known AssertionError issues on Linux
     face_app = FaceAnalysis(
-        name="antelopev2",
-        allowed_modules=None,
+        name="buffalo_l",
         providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
     )
     face_app.prepare(ctx_id=0, det_size=(640, 640))
