@@ -95,8 +95,11 @@ try:
     if size < 1024 * 1024:
         raise Exception(f"FaceID weight file is too small ({size} bytes) or missing")
     # Start InsightFace (antelopev2)
+    # Explicitly specify allowed_modules to ensure detection model is loaded
     face_app = FaceAnalysis(
         name="antelopev2",
+        root="/root/.insightface",
+        allowed_modules=['detection', 'recognition'],
         providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
     )
     face_app.prepare(ctx_id=0, det_size=(640, 640))
