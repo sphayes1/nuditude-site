@@ -16,7 +16,7 @@ from diffusers import AutoencoderKL, StableDiffusionXLPipeline
 from huggingface_hub import hf_hub_download
 from insightface.app import FaceAnalysis
 
-# Discover FaceID classes/weights dynamically from ip_adapter package
+# Detect which FaceID classes/weights are available in ip_adapter
 try:
     from ip_adapter import ip_adapter_faceid as faceid_module
 except ImportError:
@@ -24,7 +24,7 @@ except ImportError:
 
 FACEID_CANDIDATES = [
     ("IPAdapterFaceIDPlusV2XL", "ip-adapter-faceid-plusv2_sdxl.bin"),
-    ("IPAdapterFaceIDPlusXL", "ip-adapter-faceid-plusv2_sdxl.bin"),  # weights compatible with PlusV2
+    ("IPAdapterFaceIDPlusXL", "ip-adapter-faceid-plusv2_sdxl.bin"),
     ("IPAdapterFaceIDXL", "ip-adapter-faceid_sdxl.bin"),
 ]
 AVAILABLE_FACEID_CANDIDATES = []
@@ -33,7 +33,7 @@ for class_name, weight in FACEID_CANDIDATES:
         AVAILABLE_FACEID_CANDIDATES.append((getattr(faceid_module, class_name), weight, class_name))
 
 if not AVAILABLE_FACEID_CANDIDATES:
-    print("Warning: No FaceID classes available in ip_adapter package. Will run text-only.")
+    print("Warning: no FaceID classes found in ip_adapter module. Falling back to text-only mode.")
 
 print("=" * 60)
 print("Initializing SDXL + FaceID Worker")
@@ -103,12 +103,13 @@ for faceid_class, weight_filename, class_name in AVAILABLE_FACEID_CANDIDATES:
         )
         face_app.prepare(ctx_id=0, det_size=(640, 640))
 
-        ip_adapter = faceid_class(
-            pipe,
-            image_encoder_path="/workspace/models/image_encoder",
-            ip_ckpt=FACEID_PATH,
-            device=device
-        )
+        kwargs = dict(pipe=pipe, ip_ckpt=FACEID_PATH, device=device)
+        try:
+            ip_adapter = faceid_class(image_encoder_path="/workspace/models/image_encoder", **kwargs)
+        except TypeError:
+            print("FaceID class does not accept image_encoder_path; retrying without it")
+            ip_adapter = faceid_class(**kwargs)
+
         print(f"✓ FaceID loaded successfully using {class_name}!")
         FACEID_AVAILABLE = True
         faceid_error = None
@@ -129,7 +130,6 @@ print("=" * 60)
 print("Worker ready! Waiting for jobs...")
 print("=" * 60)
 
-
 def decode_base64_image(base64_string: str):
     try:
         if "," in base64_string:
@@ -145,19 +145,16 @@ def decode_base64_image(base64_string: str):
         print(f"Error decoding image: {e}")
         return None
 
-
 def image_to_base64(image: Image.Image) -> str:
     buffered = BytesIO()
     image.save(buffered, format="PNG", optimize=True)
     return base64.b64encode(buffered.getvalue()).decode()
-
 
 def pil_to_bgr(pil_image: Image.Image):
     arr = np.array(pil_image)
     if arr.ndim == 2:
         arr = np.stack([arr, arr, arr], axis=-1)
     return arr[:, :, ::-1].copy()
-
 
 def get_face_embedding(pil_image: Image.Image):
     try:
@@ -175,7 +172,6 @@ def get_face_embedding(pil_image: Image.Image):
         print(f"Embedding error: {e}")
         return None
 
-
 def handler(job):
     job_input = job.get("input", {})
 
@@ -190,14 +186,16 @@ def handler(job):
         guidance = float(job_input.get("guidance_scale", 4.5))
         seed = job_input.get("seed")
 
-        print("\n" + "=" * 60)
+        print("
+" + "=" * 60)
         print("Job received:")
         print(f"  Prompt: {prompt[:100]}...")
         print(f"  Reference image: {bool(reference_image_b64)}")
         print(f"  FaceID scale: {ip_adapter_scale}")
         print(f"  Size: {width}x{height}")
         print(f"  Steps: {num_steps}, Guidance: {guidance}")
-        print("=" * 60 + "\n")
+        print("=" * 60 + "
+")
 
         if not prompt:
             return {"error": "Prompt is required"}
@@ -210,7 +208,7 @@ def handler(job):
         use_faceid = FACEID_AVAILABLE and bool(reference_image_b64)
         faceid_embeds = None
 
-        if use_faceid:
+        if use_faceid and face_app is not None:
             print("Using FaceID for identity preservation ...")
             reference_image = decode_base64_image(reference_image_b64)
             if reference_image is None:
@@ -222,7 +220,7 @@ def handler(job):
                     print("No embedding extracted, fallback to text-only")
                     use_faceid = False
 
-        if use_faceid and ip_adapter is not None:
+        if use_faceid and ip_adapter is not None and faceid_embeds is not None:
             print(f"Generating with FaceID (id_scale={ip_adapter_scale}) ...")
             output_image = ip_adapter.generate(
                 faceid_embeds=faceid_embeds,
@@ -254,7 +252,7 @@ def handler(job):
 
         return {
             "image": output_b64,
-            "used_faceid": use_faceid,
+            "used_faceid": use_faceid and ip_adapter is not None and faceid_embeds is not None,
             "id_scale": ip_adapter_scale if use_faceid else None,
             "width": width,
             "height": height,
@@ -264,10 +262,11 @@ def handler(job):
     except Exception as e:
         error_msg = str(e)
         error_trace = traceback.format_exc()
-        print("\nError occurred:")
+        print("
+Error occurred:")
         print(error_trace)
         return {"error": error_msg, "traceback": error_trace}
 
-
-print("\nStarting RunPod serverless handler ...")
+print("
+Starting RunPod serverless handler ...")
 runpod.serverless.start({"handler": handler})
