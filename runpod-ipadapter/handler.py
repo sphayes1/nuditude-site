@@ -16,33 +16,29 @@ from diffusers import AutoencoderKL, StableDiffusionXLPipeline
 from huggingface_hub import hf_hub_download
 from insightface.app import FaceAnalysis
 
-# Dynamically select the FaceID class/weight available in ip_adapter package
+# Discover FaceID classes/weights dynamically from ip_adapter package
 try:
     from ip_adapter import ip_adapter_faceid as faceid_module
 except ImportError:
     import ip_adapter.ip_adapter_faceid as faceid_module  # type: ignore
 
-FACEID_CLASS = None
-FACEID_FILENAME = None
 FACEID_CANDIDATES = [
     ("IPAdapterFaceIDPlusV2XL", "ip-adapter-faceid-plusv2_sdxl.bin"),
-    ("IPAdapterFaceIDPlusXL", "ip-adapter-faceid-plusv2_sdxl.bin"),
-    ("IPAdapterFaceIDXL", "ip-adapter-faceid_sdxl.bin")
+    ("IPAdapterFaceIDPlusXL", "ip-adapter-faceid-plusv2_sdxl.bin"),  # weights compatible with PlusV2
+    ("IPAdapterFaceIDXL", "ip-adapter-faceid_sdxl.bin"),
 ]
-for class_name, filename in FACEID_CANDIDATES:
+AVAILABLE_FACEID_CANDIDATES = []
+for class_name, weight in FACEID_CANDIDATES:
     if hasattr(faceid_module, class_name):
-        FACEID_CLASS = getattr(faceid_module, class_name)
-        FACEID_FILENAME = filename
-        print(f"Selected FaceID class: {class_name} with weight {filename}")
-        break
-if FACEID_CLASS is None or FACEID_FILENAME is None:
-    raise ImportError("No suitable FaceID class available in ip_adapter.faceid")
+        AVAILABLE_FACEID_CANDIDATES.append((getattr(faceid_module, class_name), weight, class_name))
+
+if not AVAILABLE_FACEID_CANDIDATES:
+    print("Warning: No FaceID classes available in ip_adapter package. Will run text-only.")
 
 print("=" * 60)
 print("Initializing SDXL + FaceID Worker")
 print("=" * 60)
 
-# Device setup
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
 
@@ -65,57 +61,69 @@ pipe.enable_vae_slicing()
 print("SDXL pipeline loaded successfully!")
 
 print("Loading FaceID (IP-Adapter) ...")
-try:
-    FACEID_PATH = f"/workspace/models/ip-adapter/{FACEID_FILENAME}"
+FACEID_AVAILABLE = False
+ip_adapter = None
+face_app = None
+faceid_error = None
+
+for faceid_class, weight_filename, class_name in AVAILABLE_FACEID_CANDIDATES:
+    print(f"Trying FaceID class {class_name} with weight {weight_filename}")
+    FACEID_PATH = f"/workspace/models/ip-adapter/{weight_filename}"
     os.makedirs(os.path.dirname(FACEID_PATH), exist_ok=True)
+
     size = os.path.getsize(FACEID_PATH) if os.path.exists(FACEID_PATH) else 0
     if size < 1024 * 1024:
-        print(f"FaceID weight missing or too small (size={size}). Downloading via huggingface_hub...")
+        print(f"Need to download {weight_filename} (current size={size}).")
         token = os.getenv("HUGGINGFACE_TOKEN")
         if not token:
-            print("Warning: HUGGINGFACE_TOKEN not set; attempting anonymous download (may fail).")
+            print("Warning: HUGGINGFACE_TOKEN not set; attempting anonymous download.")
         try:
             hf_hub_download(
                 repo_id="h94/IP-Adapter-FaceID",
-                filename=FACEID_FILENAME,
+                filename=weight_filename,
                 token=token,
                 local_dir=os.path.dirname(FACEID_PATH),
                 local_dir_use_symlinks=False
             )
-        except Exception as de:
-            print(f"hf_hub_download error: {de}")
-            raise
-except Exception as e:
-    print(f"FaceID preflight warning: {e}")
+        except Exception as download_error:
+            print(f"hf_hub_download error for {weight_filename}: {download_error}")
+            faceid_error = download_error
+            continue
+        size = os.path.getsize(FACEID_PATH) if os.path.exists(FACEID_PATH) else 0
+        print(f"Downloaded FaceID weight size={size} bytes")
+        if size < 1024 * 1024:
+            print(f"Downloaded file still too small ({size}). Skipping {class_name}.")
+            faceid_error = Exception("FaceID weight still too small after download")
+            continue
 
-try:
-    size = os.path.getsize(FACEID_PATH) if os.path.exists(FACEID_PATH) else 0
-    print(f"FaceID weight at {FACEID_PATH}, size={size} bytes")
-    if size < 1024 * 1024:
-        raise Exception(f"FaceID weight file is too small ({size} bytes) or missing")
+    try:
+        face_app = FaceAnalysis(
+            name="buffalo_l",
+            providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
+        )
+        face_app.prepare(ctx_id=0, det_size=(640, 640))
 
-    face_app = FaceAnalysis(
-        name="buffalo_l",
-        providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
-    )
-    face_app.prepare(ctx_id=0, det_size=(640, 640))
+        ip_adapter = faceid_class(
+            pipe,
+            image_encoder_path="/workspace/models/image_encoder",
+            ip_ckpt=FACEID_PATH,
+            device=device
+        )
+        print(f"✓ FaceID loaded successfully using {class_name}!")
+        FACEID_AVAILABLE = True
+        faceid_error = None
+        break
+    except Exception as load_error:
+        print(f"Failed to load {class_name}: {load_error}")
+        traceback.print_exc()
+        faceid_error = load_error
+        face_app = None
+        ip_adapter = None
+        continue
 
-    ip_adapter = FACEID_CLASS(
-        pipe,
-        image_encoder_path="/workspace/models/image_encoder",
-        ip_ckpt=FACEID_PATH,
-        device=device
-    )
-    print("Ã¢Å“â€œ FaceID loaded successfully!")
-    FACEID_AVAILABLE = True
-except Exception as e:
-    print("FaceID failed to load:")
-    print(f"Error type: {type(e).__name__}")
-    print(f"Error message: {str(e)}")
-    print("Full traceback:")
-    traceback.print_exc()
+if not FACEID_AVAILABLE:
+    print("FaceID unavailable:", faceid_error)
     print("Will fallback to text-only generation")
-    FACEID_AVAILABLE = False
 
 print("=" * 60)
 print("Worker ready! Waiting for jobs...")
@@ -214,7 +222,7 @@ def handler(job):
                     print("No embedding extracted, fallback to text-only")
                     use_faceid = False
 
-        if use_faceid:
+        if use_faceid and ip_adapter is not None:
             print(f"Generating with FaceID (id_scale={ip_adapter_scale}) ...")
             output_image = ip_adapter.generate(
                 faceid_embeds=faceid_embeds,
@@ -242,7 +250,7 @@ def handler(job):
 
         print("Converting output to base64 ...")
         output_b64 = image_to_base64(output_image)
-        print("Ã¢Å“â€œ Generation complete!")
+        print("✓ Generation complete!")
 
         return {
             "image": output_b64,
