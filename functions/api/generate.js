@@ -128,6 +128,10 @@ export async function onRequestPost(context) {
       return json(400, { error: 'Prompt required', detail: 'Provide a user prompt or configure a master prompt.' });
     }
 
+    if (!referenceImage) {
+      return json(400, { error: 'reference_image is required for inpainting' });
+    }
+
     const createBody = {
       input: {
         prompt: userPrompt,
