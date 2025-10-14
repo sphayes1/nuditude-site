@@ -318,6 +318,8 @@
               seed,
               referenceImage,
               maskImage,
+              maskStartFraction,
+              faceBoundingBox,
               outputImage,
             } = entry;
             const timeFmt = timestamp ? new Date(timestamp).toLocaleString() : '';
@@ -336,6 +338,12 @@
               `Guidance: ${guidance}`,
               `IP Scale: ${ipAdapterScale}`,
               seed ? `Seed: ${seed}` : null,
+              maskStartFraction !== null && maskStartFraction !== undefined
+                ? `Mask start: ${(maskStartFraction * 100).toFixed(1)}%`
+                : null,
+              Array.isArray(faceBoundingBox)
+                ? `Face box: ${faceBoundingBox.map((v) => Math.round(v)).join(', ')}`
+                : null,
             ]
               .filter(Boolean)
               .join('<br>');

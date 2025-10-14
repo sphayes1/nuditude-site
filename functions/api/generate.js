@@ -202,6 +202,9 @@ export async function onRequestPost(context) {
           return json(500, { error: 'RunPod: no image in output', detail: out });
         }
         const image = ensureDataUrl(img);
+        const maskImage = ensureDataUrl(out.mask_image || out.maskImage);
+        const maskStartFraction = out.mask_start_fraction ?? out.maskStartFraction ?? null;
+        const faceBoundingBox = out.face_bbox ?? out.faceBoundingBox ?? null;
 
         await appendLog(env, {
           timestamp: new Date().toISOString(),
@@ -218,13 +221,17 @@ export async function onRequestPost(context) {
           seed,
           referenceImage: ensureDataUrl(referenceImage),
           outputImage: image,
-          maskImage: ensureDataUrl(out.mask_image),
+          maskImage,
+          maskStartFraction,
+          faceBoundingBox,
           runpodOutput: out,
         });
 
         return json(200, {
           image,
           mask_image: out.mask_image,
+          mask_start_fraction: maskStartFraction,
+          face_bbox: faceBoundingBox,
           provider: 'runpod-pages',
         });
       }

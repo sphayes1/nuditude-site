@@ -33,6 +33,8 @@ DEFAULT_NEGATIVE_PROMPT = os.getenv(
 ).strip()
 NEGATIVE_PROMPT_CACHE = {"text": DEFAULT_NEGATIVE_PROMPT, "mtime": None}
 ALLOW_USER_PROMPT_ENV = os.getenv("ALLOW_USER_PROMPT")
+MIN_MASK_FRACTION = float(os.getenv("MASK_MIN_FRACTION", "0.45"))
+FACE_PADDING_FRACTION = float(os.getenv("MASK_FACE_PADDING", "0.05"))
 
 FACEID_CANDIDATES = [
     ("IPAdapterFaceIDPlusV2XL", "ip-adapter-faceid-plusv2_sdxl.bin"),
@@ -268,22 +270,25 @@ def get_face_embedding(pil_image: Image.Image):
         print(f"Embedding error: {e}")
         return None, None
 
-def generate_inpaint_mask(image: Image.Image, face_bbox=None) -> Image.Image:
+def generate_inpaint_mask(image: Image.Image, face_bbox=None):
     width, height = image.size
     mask = Image.new("L", (width, height), 0)
     draw = ImageDraw.Draw(mask)
+    threshold = int(height * MIN_MASK_FRACTION)
 
     if face_bbox:
         _, y1, _, y2 = face_bbox
-        y_start = max(0, min(height, int(y2 + 0.05 * height)))
+        computed = int(y2 + FACE_PADDING_FRACTION * height)
+        y_start = max(threshold, min(height, computed))
     else:
-        y_start = int(height * 0.35)
+        y_start = max(threshold, int(height * 0.35))
 
     # Expand slightly to ensure shoulders are covered
     draw.rectangle([(0, y_start), (width, height)], fill=255)
 
     # Feather the mask edges for smoother blending
-    return mask.filter(ImageFilter.GaussianBlur(radius=12))
+    blurred = mask.filter(ImageFilter.GaussianBlur(radius=12))
+    return blurred, y_start
 
 def handler(job):
     job_input = job.get("input", {})
@@ -371,8 +376,12 @@ def handler(job):
             if faceid_embeds is None:
                 print("No embedding extracted; falling back to inpaint without FaceID")
                 use_faceid = False
+            else:
+                print(f"Face bbox detected: {face_bbox}")
 
-        mask_image = generate_inpaint_mask(reference_image, face_bbox)
+        mask_image, mask_start_px = generate_inpaint_mask(reference_image, face_bbox)
+        mask_start_fraction = round(mask_start_px / height, 4) if height else None
+        print(f"Mask starts at pixel row {mask_start_px} (~{mask_start_fraction} of height)")
         mask_b64 = image_to_base64(mask_image.convert("L"))
 
         generator = None
@@ -422,7 +431,9 @@ def handler(job):
             "prompt": prompt,
             "master_prompt": master_prompt,
             "user_prompt_allowed": allow_user_prompt,
-            "mask_image": mask_b64
+            "mask_image": mask_b64,
+            "mask_start_fraction": mask_start_fraction,
+            "face_bbox": list(face_bbox) if face_bbox else None
         }
 
     except Exception as e:
