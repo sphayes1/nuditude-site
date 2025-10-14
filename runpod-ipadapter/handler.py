@@ -12,8 +12,8 @@ from io import BytesIO
 import numpy as np
 import runpod
 import torch
-from PIL import Image
-from diffusers import AutoencoderKL, StableDiffusionXLPipeline
+from PIL import Image, ImageDraw, ImageFilter
+from diffusers import AutoencoderKL, StableDiffusionXLInpaintPipeline
 from huggingface_hub import hf_hub_download
 from insightface.app import FaceAnalysis
 
@@ -79,8 +79,8 @@ vae = AutoencoderKL.from_pretrained(
     torch_dtype=torch.float16
 )
 
-print("Loading SDXL pipeline...")
-pipe = StableDiffusionXLPipeline.from_pretrained(
+print("Loading SDXL inpaint pipeline...")
+pipe = StableDiffusionXLInpaintPipeline.from_pretrained(
     "stabilityai/stable-diffusion-xl-base-1.0",
     vae=vae,
     torch_dtype=torch.float16,
@@ -253,20 +253,37 @@ def pil_to_bgr(pil_image: Image.Image):
 def get_face_embedding(pil_image: Image.Image):
     try:
         if face_app is None:
-            return None
+            return None, None
         bgr = pil_to_bgr(pil_image)
         faces = face_app.get(bgr)
         if not faces:
             print("No face detected in reference image")
-            return None
+            return None, None
         faces.sort(key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
         emb = faces[0].normed_embedding
         if emb is None:
-            return None
-        return torch.tensor(emb, device=device).unsqueeze(0).float()
+            return None, tuple(faces[0].bbox)
+        return torch.tensor(emb, device=device).unsqueeze(0).float(), tuple(faces[0].bbox)
     except Exception as e:
         print(f"Embedding error: {e}")
-        return None
+        return None, None
+
+def generate_inpaint_mask(image: Image.Image, face_bbox=None) -> Image.Image:
+    width, height = image.size
+    mask = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(mask)
+
+    if face_bbox:
+        _, y1, _, y2 = face_bbox
+        y_start = max(0, min(height, int(y2 + 0.05 * height)))
+    else:
+        y_start = int(height * 0.35)
+
+    # Expand slightly to ensure shoulders are covered
+    draw.rectangle([(0, y_start), (width, height)], fill=255)
+
+    # Feather the mask edges for smoother blending
+    return mask.filter(ImageFilter.GaussianBlur(radius=12))
 
 def handler(job):
     job_input = job.get("input", {})
@@ -319,7 +336,7 @@ def handler(job):
         print(f"  Prompt: {prompt[:100]}...")
         print(f"  Reference image: {bool(reference_image_b64)}")
         print(f"  FaceID scale: {ip_adapter_scale}")
-        print(f"  Size: {width}x{height}")
+        print(f"  Requested size: {width}x{height}")
         print(f"  Steps: {num_steps}, Guidance: {guidance}")
         print(f"  Master prompt active: {bool(master_prompt)}")
         print(f"  User prompt allowed: {allow_user_prompt}")
@@ -331,20 +348,36 @@ def handler(job):
         if seed_value is not None:
             print(f"Using seed: {seed_value}")
 
-        use_faceid = FACEID_AVAILABLE and bool(reference_image_b64)
+        if not reference_image_b64:
+            return {"error": "reference_image is required for inpainting"}
+
+        reference_image = decode_base64_image(reference_image_b64)
+        if reference_image is None:
+            return {"error": "Failed to decode reference image"}
+
+        if reference_image.width != width or reference_image.height != height:
+            print(f"Resizing reference image from {reference_image.size} to {(width, height)}")
+            reference_image = reference_image.resize((width, height), Image.Resampling.LANCZOS)
+        width = reference_image.width
+        height = reference_image.height
+
+        use_faceid = FACEID_AVAILABLE
         faceid_embeds = None
+        face_bbox = None
 
         if use_faceid:
             print("Using FaceID for identity preservation ...")
-            reference_image = decode_base64_image(reference_image_b64)
-            if reference_image is None:
-                print("Failed to decode reference image; falling back to text-only")
+            faceid_embeds, face_bbox = get_face_embedding(reference_image)
+            if faceid_embeds is None:
+                print("No embedding extracted; falling back to inpaint without FaceID")
                 use_faceid = False
-            else:
-                faceid_embeds = get_face_embedding(reference_image)
-                if faceid_embeds is None:
-                    print("No embedding extracted; falling back to text-only")
-                    use_faceid = False
+
+        mask_image = generate_inpaint_mask(reference_image, face_bbox)
+        mask_b64 = image_to_base64(mask_image.convert("L"))
+
+        generator = None
+        if seed_value is not None:
+            generator = torch.Generator(device=device).manual_seed(seed_value)
 
         if use_faceid and ip_adapter is not None and faceid_embeds is not None:
             print(f"Generating with FaceID (id_scale={ip_adapter_scale}) ...")
@@ -356,25 +389,23 @@ def handler(job):
                 num_samples=1,
                 num_inference_steps=num_steps,
                 guidance_scale=guidance,
-                height=height,
-                width=width,
+                image=reference_image,
+                mask_image=mask_image,
+                generator=generator,
             )
             if seed_value is not None:
                 faceid_kwargs["seed"] = seed_value
             output_images = ip_adapter.generate(**faceid_kwargs)
             output_image = output_images[0]
         else:
-            print("Generating with text-only (no FaceID) ...")
-            generator = None
-            if seed_value is not None:
-                generator = torch.Generator(device=device).manual_seed(seed_value)
+            print("Generating with inpainting (no FaceID) ...")
             output_image = pipe(
                 prompt=prompt,
                 negative_prompt=negative_prompt,
                 num_inference_steps=num_steps,
                 guidance_scale=guidance,
-                height=height,
-                width=width,
+                image=reference_image,
+                mask_image=mask_image,
                 generator=generator
             ).images[0]
 
@@ -391,7 +422,8 @@ def handler(job):
             "num_inference_steps": num_steps,
             "prompt": prompt,
             "master_prompt": master_prompt,
-            "user_prompt_allowed": allow_user_prompt
+            "user_prompt_allowed": allow_user_prompt,
+            "mask_image": mask_b64
         }
 
     except Exception as e:

@@ -317,12 +317,16 @@
               ipAdapterScale,
               seed,
               referenceImage,
+              maskImage,
               outputImage,
             } = entry;
             const timeFmt = timestamp ? new Date(timestamp).toLocaleString() : '';
             const refCell = referenceImage
               ? `<img class="thumb" src="${referenceImage}" alt="input" />`
               : '<span style="color: var(--muted);">None</span>';
+            const maskCell = maskImage
+              ? `<img class="thumb" src="${maskImage}" alt="mask" />`
+              : '<span style="color: var(--muted);">Auto</span>';
             const outCell = outputImage
               ? `<img class="thumb" src="${outputImage}" alt="output" />`
               : '<span style="color: var(--muted);">None</span>';
@@ -345,6 +349,7 @@
                 <td>${negativePrompt || '(default)'}</td>
                 <td>${settings}</td>
                 <td>${refCell}</td>
+                <td>${maskCell}</td>
                 <td>${outCell}</td>
               </tr>
             `;
@@ -361,6 +366,7 @@
                 <th>Negative</th>
                 <th>Settings</th>
                 <th>Input</th>
+                <th>Mask</th>
                 <th>Output</th>
               </tr>
             </thead>

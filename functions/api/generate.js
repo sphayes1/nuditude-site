@@ -208,11 +208,13 @@ export async function onRequestPost(context) {
           seed,
           referenceImage: ensureDataUrl(referenceImage),
           outputImage: image,
+          maskImage: ensureDataUrl(out.mask_image),
           runpodOutput: out,
         });
 
         return json(200, {
           image,
+          mask_image: out.mask_image,
           provider: 'runpod-pages',
         });
       }
