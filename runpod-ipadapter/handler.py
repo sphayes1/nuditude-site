@@ -391,7 +391,6 @@ def handler(job):
                 guidance_scale=guidance,
                 image=reference_image,
                 mask_image=mask_image,
-                generator=generator,
             )
             if seed_value is not None:
                 faceid_kwargs["seed"] = seed_value
