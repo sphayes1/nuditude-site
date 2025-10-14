@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nuditute Admin — Prompt Manager</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f1115;
+        --card: #161922;
+        --border: #2c3242;
+        --accent: #7c5cff;
+        --text: #f3f6ff;
+        --muted: #a7aec9;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: radial-gradient(circle at top, rgba(124, 92, 255, 0.12), transparent 55%), var(--bg);
+        color: var(--text);
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      .card {
+        width: min(720px, 100%);
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 28px;
+        box-shadow: 0 20px 60px rgba(5, 7, 15, 0.5);
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.6rem;
+        font-weight: 600;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      label {
+        display: block;
+        font-size: 0.9rem;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+      input[type="password"],
+      textarea {
+        width: 100%;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: rgba(12, 14, 22, 0.85);
+        color: var(--text);
+        padding: 12px 14px;
+        font-size: 0.95rem;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+      textarea {
+        min-height: 180px;
+        resize: vertical;
+        line-height: 1.5;
+      }
+      input[type="password"]:focus,
+      textarea:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px rgba(124, 92, 255, 0.25);
+      }
+      button {
+        border: none;
+        border-radius: 999px;
+        padding: 12px 20px;
+        background: var(--accent);
+        color: white;
+        font-weight: 600;
+        font-size: 0.95rem;
+        cursor: pointer;
+        transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease;
+      }
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 12px 24px rgba(124, 92, 255, 0.35);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        box-shadow: none;
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 0.95rem;
+        color: var(--muted);
+      }
+      .switch input {
+        width: 42px;
+        height: 22px;
+        appearance: none;
+        border-radius: 999px;
+        background: #2a3142;
+        position: relative;
+        outline: none;
+        cursor: pointer;
+        transition: background 0.2s ease;
+      }
+      .switch input::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: white;
+        transition: transform 0.2s ease;
+      }
+      .switch input:checked {
+        background: var(--accent);
+      }
+      .switch input:checked::after {
+        transform: translateX(20px);
+      }
+      .status {
+        font-size: 0.9rem;
+        color: var(--muted);
+        min-height: 1.2rem;
+      }
+      .danger {
+        background: rgba(255, 76, 120, 0.12);
+        color: #ff6f9a;
+        border: 1px solid rgba(255, 76, 120, 0.35);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <section id="login-view">
+        <h1>Admin Login</h1>
+        <p>Enter the admin password to manage the master prompt and user settings.</p>
+        <form id="login-form">
+          <label for="admin-password">Admin Password</label>
+          <input id="admin-password" type="password" autocomplete="current-password" required />
+          <div class="row" style="margin-top: 16px;">
+            <button type="submit">Unlock</button>
+            <span class="status" id="login-status"></span>
+          </div>
+        </form>
+      </section>
+
+      <section id="editor-view" hidden>
+        <div class="row">
+          <h1>Master Prompt Controls</h1>
+          <button type="button" id="logout-btn" class="danger">Log out</button>
+        </div>
+        <p>The master prompt is always prepended to user prompts before sending jobs to the RunPod worker.</p>
+        <form id="prompt-form">
+          <label for="master-prompt">Master Prompt</label>
+          <textarea id="master-prompt" placeholder="Describe your desired baseline style here."></textarea>
+
+          <label for="negative-prompt">Default Negative Prompt</label>
+          <textarea
+            id="negative-prompt"
+            placeholder="Words you always want to avoid (optional). Leave blank to use the worker default."
+          ></textarea>
+
+          <label class="switch" style="margin-top: 8px;">
+            <input type="checkbox" id="allow-user-prompt" />
+            <span>Allow studio users to provide extra prompt text</span>
+          </label>
+
+          <div class="row" style="margin-top: 20px;">
+            <button type="submit" id="save-btn">Save Changes</button>
+            <span class="status" id="save-status"></span>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script>
+      const loginView = document.getElementById('login-view');
+      const editorView = document.getElementById('editor-view');
+      const loginForm = document.getElementById('login-form');
+      const promptForm = document.getElementById('prompt-form');
+      const passwordInput = document.getElementById('admin-password');
+      const masterPromptInput = document.getElementById('master-prompt');
+      const negativePromptInput = document.getElementById('negative-prompt');
+      const allowUserPromptInput = document.getElementById('allow-user-prompt');
+      const loginStatus = document.getElementById('login-status');
+      const saveStatus = document.getElementById('save-status');
+      const logoutBtn = document.getElementById('logout-btn');
+
+      const storageKey = 'nuditude-admin-token';
+      let token = localStorage.getItem(storageKey) || '';
+
+      const headers = () => ({
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      });
+
+      function setView(isLoggedIn) {
+        loginView.hidden = isLoggedIn;
+        editorView.hidden = !isLoggedIn;
+        if (!isLoggedIn) {
+          loginStatus.textContent = '';
+          saveStatus.textContent = '';
+          passwordInput.value = '';
+        }
+      }
+
+      async function fetchConfig() {
+        saveStatus.textContent = 'Loading...';
+        const response = await fetch('/api/prompt', { headers: headers() });
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+        return response.json();
+      }
+
+      async function loadConfig() {
+        try {
+          const config = await fetchConfig();
+          masterPromptInput.value = config.masterPrompt || '';
+          negativePromptInput.value = config.negativePrompt || '';
+          allowUserPromptInput.checked = Boolean(config.allowUserPrompt);
+          saveStatus.textContent = 'Loaded';
+        } catch (error) {
+          saveStatus.textContent = 'Failed to load settings';
+        }
+      }
+
+      loginForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        loginStatus.textContent = '';
+
+        const candidate = passwordInput.value.trim();
+        if (!candidate) {
+          loginStatus.textContent = 'Password required';
+          return;
+        }
+
+        token = candidate;
+        try {
+          await fetchConfig();
+          localStorage.setItem(storageKey, token);
+          setView(true);
+          await loadConfig();
+        } catch (error) {
+          token = '';
+          loginStatus.textContent = 'Invalid password';
+        }
+      });
+
+      promptForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        saveStatus.textContent = 'Saving...';
+        const payload = {
+          masterPrompt: masterPromptInput.value.trim(),
+          negativePrompt: negativePromptInput.value.trim(),
+          allowUserPrompt: allowUserPromptInput.checked,
+        };
+
+        try {
+          const response = await fetch('/api/prompt', {
+            method: 'POST',
+            headers: headers(),
+            body: JSON.stringify(payload),
+          });
+          if (!response.ok) {
+            throw new Error(await response.text());
+          }
+          saveStatus.textContent = 'Saved!';
+          setTimeout(() => {
+            saveStatus.textContent = '';
+          }, 2000);
+        } catch (error) {
+          saveStatus.textContent = 'Save failed';
+        }
+      });
+
+      logoutBtn.addEventListener('click', () => {
+        localStorage.removeItem(storageKey);
+        token = '';
+        setView(false);
+      });
+
+      if (token) {
+        fetchConfig()
+          .then(async (config) => {
+            setView(true);
+            masterPromptInput.value = config.masterPrompt || '';
+            negativePromptInput.value = config.negativePrompt || '';
+            allowUserPromptInput.checked = Boolean(config.allowUserPrompt);
+            saveStatus.textContent = '';
+          })
+          .catch(() => {
+            token = '';
+            localStorage.removeItem(storageKey);
+            setView(false);
+          });
+      } else {
+        setView(false);
+      }
+    </script>
+  </body>
+</html>

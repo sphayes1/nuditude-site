@@ -4,6 +4,7 @@ Locks identity using face embeddings from InsightFace.
 """
 
 import base64
+import inspect
 import os
 import traceback
 from io import BytesIO
@@ -20,6 +21,18 @@ try:
     from ip_adapter import ip_adapter_faceid as faceid_module
 except ImportError:
     import ip_adapter.ip_adapter_faceid as faceid_module  # type: ignore
+
+MASTER_PROMPT_PATH = os.getenv("MASTER_PROMPT_PATH", "/workspace/config/master_prompt.txt")
+DEFAULT_MASTER_PROMPT = os.getenv("MASTER_PROMPT_TEXT", "").strip()
+MASTER_PROMPT_CACHE = {"text": DEFAULT_MASTER_PROMPT, "mtime": None}
+
+NEGATIVE_PROMPT_PATH = os.getenv("MASTER_NEGATIVE_PROMPT_PATH", "/workspace/config/negative_prompt.txt")
+DEFAULT_NEGATIVE_PROMPT = os.getenv(
+    "MASTER_NEGATIVE_PROMPT_TEXT",
+    "ugly, deformed, blurry, low quality, distorted"
+).strip()
+NEGATIVE_PROMPT_CACHE = {"text": DEFAULT_NEGATIVE_PROMPT, "mtime": None}
+ALLOW_USER_PROMPT_ENV = os.getenv("ALLOW_USER_PROMPT")
 
 FACEID_CANDIDATES = [
     ("IPAdapterFaceIDPlusV2XL", "ip-adapter-faceid-plusv2_sdxl.bin"),
@@ -41,6 +54,24 @@ print("=" * 60)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
+
+if MASTER_PROMPT_PATH:
+    try:
+        master_dir = os.path.dirname(MASTER_PROMPT_PATH)
+        if master_dir:
+            os.makedirs(master_dir, exist_ok=True)
+    except Exception as e:
+        print(f"Warning: unable to ensure master prompt directory {MASTER_PROMPT_PATH}: {e}")
+if NEGATIVE_PROMPT_PATH:
+    try:
+        negative_dir = os.path.dirname(NEGATIVE_PROMPT_PATH)
+        if negative_dir:
+            os.makedirs(negative_dir, exist_ok=True)
+    except Exception as e:
+        print(f"Warning: unable to ensure negative prompt directory {NEGATIVE_PROMPT_PATH}: {e}")
+
+print(f"Master prompt path: {MASTER_PROMPT_PATH or 'disabled'}")
+print(f"Negative prompt path: {NEGATIVE_PROMPT_PATH or 'disabled'}")
 
 print("Loading VAE...")
 vae = AutoencoderKL.from_pretrained(
@@ -105,12 +136,32 @@ for faceid_class, weight_filename, class_name in AVAILABLE_FACEID_CANDIDATES:
         )
         face_app.prepare(ctx_id=0, det_size=(640, 640))
 
-        kwargs = dict(pipe=pipe, ip_ckpt=faceid_path, device=device)
         try:
-            ip_adapter = faceid_class(image_encoder_path="/workspace/models/image_encoder", **kwargs)
-        except TypeError:
-            print("FaceID class does not accept image_encoder_path; retrying without it")
-            ip_adapter = faceid_class(**kwargs)
+            init_signature = inspect.signature(faceid_class.__init__)
+            parameters = set(init_signature.parameters.keys())
+        except (TypeError, ValueError):
+            init_signature = None
+            parameters = set()
+
+        args = []
+        kwargs = {"ip_ckpt": faceid_path, "device": device}
+
+        if "sd_pipe" in parameters:
+            kwargs["sd_pipe"] = pipe
+        elif "pipe" in parameters:
+            kwargs["pipe"] = pipe
+        elif "pipeline" in parameters:
+            kwargs["pipeline"] = pipe
+        else:
+            args.append(pipe)
+
+        if "image_encoder_path" in parameters:
+            kwargs["image_encoder_path"] = "/workspace/models/image_encoder"
+
+        if "torch_dtype" in parameters:
+            kwargs["torch_dtype"] = torch.float16
+
+        ip_adapter = faceid_class(*args, **kwargs)
 
         print(f"FaceID loaded successfully using {class_name}!")
         FACEID_AVAILABLE = True
@@ -131,6 +182,47 @@ if not FACEID_AVAILABLE:
 print("=" * 60)
 print("Worker ready! Waiting for jobs...")
 print("=" * 60)
+
+def parse_bool(value, default=True):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+    return default
+
+def load_prompt_from_source(label: str, path: str | None, cache: dict, default_value: str) -> str:
+    cached_value = cache.get("text", "") or default_value
+    if not path:
+        return cached_value
+
+    try:
+        if os.path.exists(path):
+            mtime = os.path.getmtime(path)
+            if cache.get("mtime") != mtime:
+                with open(path, "r", encoding="utf-8") as prompt_file:
+                    new_value = prompt_file.read().strip()
+                cache["text"] = new_value or default_value
+                cache["mtime"] = mtime
+        else:
+            cache["text"] = cache.get("text", "") or default_value
+    except Exception as exc:
+        print(f"Warning: Failed to load {label} prompt from {path}: {exc}")
+
+    return cache.get("text", "") or default_value
+
+def get_master_prompt() -> str:
+    return load_prompt_from_source("master", MASTER_PROMPT_PATH, MASTER_PROMPT_CACHE, DEFAULT_MASTER_PROMPT)
+
+def get_negative_prompt_default() -> str:
+    return load_prompt_from_source("negative", NEGATIVE_PROMPT_PATH, NEGATIVE_PROMPT_CACHE, DEFAULT_NEGATIVE_PROMPT)
 
 def decode_base64_image(base64_string: str):
     try:
@@ -180,34 +272,64 @@ def handler(job):
     job_input = job.get("input", {})
 
     try:
-        prompt = job_input.get("prompt", "")
-        negative_prompt = job_input.get("negative_prompt", "ugly, deformed, blurry, low quality, distorted")
+        prompt_raw = str(job_input.get("prompt", "") or "").strip()
+        negative_prompt_raw = job_input.get("negative_prompt")
         reference_image_b64 = job_input.get("reference_image")
         ip_adapter_scale = float(job_input.get("ip_adapter_scale", 0.8))
         width = int(job_input.get("width", 768))
         height = int(job_input.get("height", 1024))
         num_steps = int(job_input.get("num_inference_steps", 28))
         guidance = float(job_input.get("guidance_scale", 4.5))
-        seed = job_input.get("seed")
+        seed_raw = job_input.get("seed")
 
-        print("
-" + "=" * 60)
+        use_master_prompt = parse_bool(job_input.get("use_master_prompt"), True)
+        allow_user_prompt_default = parse_bool(ALLOW_USER_PROMPT_ENV, False)
+        allow_user_prompt = parse_bool(job_input.get("allow_user_prompt"), allow_user_prompt_default)
+        master_prompt_override = job_input.get("master_prompt")
+        if use_master_prompt:
+            if master_prompt_override is not None:
+                master_prompt = str(master_prompt_override).strip()
+            else:
+                master_prompt = get_master_prompt().strip()
+        else:
+            master_prompt = ""
+
+        user_prompt = prompt_raw if allow_user_prompt else ""
+        if prompt_raw and not allow_user_prompt:
+            print("User prompt provided but ignored because allow_user_prompt is disabled.")
+
+        prompt_parts = [part for part in (master_prompt, user_prompt) if part]
+        prompt = ", ".join(prompt_parts).strip()
+
+        if negative_prompt_raw is None or str(negative_prompt_raw).strip() == "":
+            negative_prompt = get_negative_prompt_default()
+        else:
+            negative_prompt = str(negative_prompt_raw)
+
+        seed_value = None
+        if seed_raw is not None:
+            try:
+                seed_value = int(seed_raw)
+            except (TypeError, ValueError):
+                print(f"Invalid seed value provided ({seed_raw}); ignoring.")
+                seed_value = None
+
+        print("\n" + "=" * 60)
         print("Job received:")
         print(f"  Prompt: {prompt[:100]}...")
         print(f"  Reference image: {bool(reference_image_b64)}")
         print(f"  FaceID scale: {ip_adapter_scale}")
         print(f"  Size: {width}x{height}")
         print(f"  Steps: {num_steps}, Guidance: {guidance}")
-        print("=" * 60 + "
-")
+        print(f"  Master prompt active: {bool(master_prompt)}")
+        print(f"  User prompt allowed: {allow_user_prompt}")
+        print("=" * 60 + "\n")
 
         if not prompt:
             return {"error": "Prompt is required"}
 
-        generator = None
-        if seed is not None:
-            generator = torch.Generator(device=device).manual_seed(int(seed))
-            print(f"Using seed: {seed}")
+        if seed_value is not None:
+            print(f"Using seed: {seed_value}")
 
         use_faceid = FACEID_AVAILABLE and bool(reference_image_b64)
         faceid_embeds = None
@@ -226,20 +348,26 @@ def handler(job):
 
         if use_faceid and ip_adapter is not None and faceid_embeds is not None:
             print(f"Generating with FaceID (id_scale={ip_adapter_scale}) ...")
-            output_image = ip_adapter.generate(
+            faceid_kwargs = dict(
                 faceid_embeds=faceid_embeds,
                 prompt=prompt,
                 negative_prompt=negative_prompt,
-                id_scale=ip_adapter_scale,
-                image_prompt_scale=0.0,
+                scale=ip_adapter_scale,
+                num_samples=1,
                 num_inference_steps=num_steps,
                 guidance_scale=guidance,
                 height=height,
                 width=width,
-                generator=generator
-            )[0]
+            )
+            if seed_value is not None:
+                faceid_kwargs["seed"] = seed_value
+            output_images = ip_adapter.generate(**faceid_kwargs)
+            output_image = output_images[0]
         else:
             print("Generating with text-only (no FaceID) ...")
+            generator = None
+            if seed_value is not None:
+                generator = torch.Generator(device=device).manual_seed(seed_value)
             output_image = pipe(
                 prompt=prompt,
                 negative_prompt=negative_prompt,
@@ -260,17 +388,18 @@ def handler(job):
             "id_scale": ip_adapter_scale if use_faceid else None,
             "width": width,
             "height": height,
-            "num_inference_steps": num_steps
+            "num_inference_steps": num_steps,
+            "prompt": prompt,
+            "master_prompt": master_prompt,
+            "user_prompt_allowed": allow_user_prompt
         }
 
     except Exception as e:
         error_msg = str(e)
         error_trace = traceback.format_exc()
-        print("
-Error occurred:")
+        print("\nError occurred:")
         print(error_trace)
         return {"error": error_msg, "traceback": error_trace}
 
-print("
-Starting RunPod serverless handler ...")
+print("\nStarting RunPod serverless handler ...")
 runpod.serverless.start({"handler": handler})
