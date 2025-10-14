@@ -16,6 +16,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from diffusers import AutoencoderKL, StableDiffusionXLInpaintPipeline
 from huggingface_hub import hf_hub_download
 from insightface.app import FaceAnalysis
+from segmentation import SEGMENTATION_READY, generate_clothing_mask, load_models
 
 try:
     from ip_adapter import ip_adapter_faceid as faceid_module
@@ -35,6 +36,7 @@ NEGATIVE_PROMPT_CACHE = {"text": DEFAULT_NEGATIVE_PROMPT, "mtime": None}
 ALLOW_USER_PROMPT_ENV = os.getenv("ALLOW_USER_PROMPT")
 MIN_MASK_FRACTION = float(os.getenv("MASK_MIN_FRACTION", "0.45"))
 FACE_PADDING_FRACTION = float(os.getenv("MASK_FACE_PADDING", "0.05"))
+USE_ADVANCED_SEGMENTATION = os.getenv("USE_SEGMENTATION", "0").lower() in {"1", "true", "yes"}
 
 FACEID_CANDIDATES = [
     ("IPAdapterFaceIDPlusV2XL", "ip-adapter-faceid-plusv2_sdxl.bin"),
@@ -74,6 +76,7 @@ if NEGATIVE_PROMPT_PATH:
 
 print(f"Master prompt path: {MASTER_PROMPT_PATH or 'disabled'}")
 print(f"Negative prompt path: {NEGATIVE_PROMPT_PATH or 'disabled'}")
+print(f"Advanced segmentation enabled: {USE_ADVANCED_SEGMENTATION}")
 
 print("Loading VAE...")
 vae = AutoencoderKL.from_pretrained(
@@ -97,6 +100,7 @@ FACEID_AVAILABLE = False
 face_app = None
 ip_adapter = None
 faceid_error = None
+SEGMENTATION_AVAILABLE = False
 
 print("Loading FaceID (IP-Adapter) ...")
 for faceid_class, weight_filename, class_name in AVAILABLE_FACEID_CANDIDATES:
@@ -182,6 +186,17 @@ if not FACEID_AVAILABLE:
     print("Continuing in text-only mode.")
 
 print("=" * 60)
+# Attempt to initialize advanced segmentation models.
+if USE_ADVANCED_SEGMENTATION:
+    try:
+        load_models()
+        SEGMENTATION_AVAILABLE = SEGMENTATION_READY
+    except Exception as segmentation_error:
+        SEGMENTATION_AVAILABLE = False
+        USE_ADVANCED_SEGMENTATION = False
+        print(f"Failed to load segmentation models: {segmentation_error}")
+        traceback.print_exc()
+
 print("Worker ready! Waiting for jobs...")
 print("=" * 60)
 
@@ -379,9 +394,37 @@ def handler(job):
             else:
                 print(f"Face bbox detected: {face_bbox}")
 
-        mask_image, mask_start_px = generate_inpaint_mask(reference_image, face_bbox)
-        mask_start_fraction = round(mask_start_px / height, 4) if height else None
-        print(f"Mask starts at pixel row {mask_start_px} (~{mask_start_fraction} of height)")
+        segmentation_diagnostics = {}
+        mask_image = None
+        mask_start_px = None
+
+        if USE_ADVANCED_SEGMENTATION and SEGMENTATION_AVAILABLE:
+            try:
+                mask_candidate, segmentation_diagnostics = generate_clothing_mask(reference_image)
+                if mask_candidate is not None:
+                    print("Segmentation mask generated via advanced pipeline.")
+                    mask_image = mask_candidate.convert("L")
+            except Exception as segmentation_error:
+                segmentation_diagnostics = {
+                    "segmentation_used": False,
+                    "reason": f"Segmentation failure: {segmentation_error}"
+                }
+                print(f"Segmentation failed; falling back to heuristic mask: {segmentation_error}")
+                traceback.print_exc()
+
+        if mask_image is None:
+            mask_image, mask_start_px = generate_inpaint_mask(reference_image, face_bbox)
+            segmentation_diagnostics.setdefault("segmentation_used", False)
+            segmentation_diagnostics.setdefault("reason", "Heuristic mask applied")
+        else:
+            mask_start_px = None
+            segmentation_diagnostics.setdefault("segmentation_used", True)
+
+        mask_start_fraction = round(mask_start_px / height, 4) if height and mask_start_px is not None else None
+        if mask_start_fraction is not None:
+            print(f"Mask starts at pixel row {mask_start_px} (~{mask_start_fraction} of height)")
+        else:
+            print("Mask start fraction unavailable (advanced segmentation provided explicit mask).")
         mask_b64 = image_to_base64(mask_image.convert("L"))
 
         generator = None
@@ -433,7 +476,8 @@ def handler(job):
             "user_prompt_allowed": allow_user_prompt,
             "mask_image": mask_b64,
             "mask_start_fraction": mask_start_fraction,
-            "face_bbox": list(face_bbox) if face_bbox else None
+            "face_bbox": list(face_bbox) if face_bbox else None,
+            "segmentation": segmentation_diagnostics
         }
 
     except Exception as e:

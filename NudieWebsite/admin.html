@@ -320,6 +320,7 @@
               maskImage,
               maskStartFraction,
               faceBoundingBox,
+              segmentation,
               outputImage,
             } = entry;
             const timeFmt = timestamp ? new Date(timestamp).toLocaleString() : '';
@@ -332,8 +333,9 @@
             const outCell = outputImage
               ? `<img class="thumb" src="${outputImage}" alt="output" />`
               : '<span style="color: var(--muted);">None</span>';
+            const segmentationInfo = segmentation || {};
             const settings = [
-              `Size: ${width}Ã—${height}`,
+              `Size: ${width}×${height}`,
               `Steps: ${steps}`,
               `Guidance: ${guidance}`,
               `IP Scale: ${ipAdapterScale}`,
@@ -344,9 +346,11 @@
               Array.isArray(faceBoundingBox)
                 ? `Face box: ${faceBoundingBox.map((v) => Math.round(v)).join(', ')}`
                 : null,
+              segmentationInfo.reason ? `Segmentation: ${segmentationInfo.reason}` : null,
             ]
               .filter(Boolean)
               .join('<br>');
+
             return `
               <tr>
                 <td>${timeFmt}</td>
@@ -362,24 +366,7 @@
               </tr>
             `;
           })
-          .join('');
-
-        logsContainer.innerHTML = `
-          <table>
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Combined Prompt</th>
-                <th>Master / User</th>
-                <th>Negative</th>
-                <th>Settings</th>
-                <th>Input</th>
-                <th>Mask</th>
-                <th>Output</th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
+          .join('');          </table>
         `;
       }
 

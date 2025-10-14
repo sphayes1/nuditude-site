@@ -205,6 +205,7 @@ export async function onRequestPost(context) {
         const maskImage = ensureDataUrl(out.mask_image || out.maskImage);
         const maskStartFraction = out.mask_start_fraction ?? out.maskStartFraction ?? null;
         const faceBoundingBox = out.face_bbox ?? out.faceBoundingBox ?? null;
+        const segmentationInfo = out.segmentation ?? out.segmentationInfo ?? {};
 
         await appendLog(env, {
           timestamp: new Date().toISOString(),
@@ -224,6 +225,7 @@ export async function onRequestPost(context) {
           maskImage,
           maskStartFraction,
           faceBoundingBox,
+          segmentation: segmentationInfo,
           runpodOutput: out,
         });
 
@@ -232,6 +234,7 @@ export async function onRequestPost(context) {
           mask_image: out.mask_image,
           mask_start_fraction: maskStartFraction,
           face_bbox: faceBoundingBox,
+          segmentation: segmentationInfo,
           provider: 'runpod-pages',
         });
       }
