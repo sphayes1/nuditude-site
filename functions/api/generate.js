@@ -121,7 +121,13 @@ export async function onRequestPost(context) {
     const guidance = parseNumber(body.guidance_scale ?? body.cfg_scale, promptConfig.defaultGuidance);
     const ipAdapterScale = parseNumber(body.ip_adapter_scale, 0.8);
 
-    const referenceImage = typeof body.reference_image === 'string' ? body.reference_image : undefined;
+    const referenceImage = (
+      typeof body.reference_image === 'string'
+        ? body.reference_image
+        : typeof body.referenceImage === 'string'
+          ? body.referenceImage
+          : undefined
+    );
     const seed = body.seed !== undefined ? String(body.seed) : undefined;
 
     if (!userPrompt && !promptConfig.masterPrompt) {
