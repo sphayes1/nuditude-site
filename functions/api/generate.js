@@ -1,202 +1,162 @@
-// Cloudflare Pages Function: POST /api/generate
-// Body: { prompt: string }
-// Requires env: RUNPOD_API_KEY, RUNPOD_ENDPOINT_ID
+const json = (status, body) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+const PROMPT_KEY = 'master_prompt';
+const NEGATIVE_KEY = 'negative_prompt';
+const ALLOW_KEY = 'allow_user_prompt';
+
+const parseBool = (value, fallback = false) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+  }
+  return fallback;
+};
+
+const parseNumber = (value, fallback) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+};
+
+async function loadPromptConfig(env) {
+  if (!env.PROMPT_STORE) {
+    return {
+      masterPrompt: '',
+      negativePrompt: '',
+      allowUserPrompt: false,
+    };
+  }
+
+  const [masterPrompt, negativePrompt, allowValue] = await Promise.all([
+    env.PROMPT_STORE.get(PROMPT_KEY),
+    env.PROMPT_STORE.get(NEGATIVE_KEY),
+    env.PROMPT_STORE.get(ALLOW_KEY),
+  ]);
+
+  return {
+    masterPrompt: masterPrompt || '',
+    negativePrompt: negativePrompt || '',
+    allowUserPrompt: allowValue === 'true',
+  };
+}
 
 export async function onRequestPost(context) {
   const { request, env } = context;
 
   try {
-    const body = await request.json();
-    const { prompt, referenceImage, ipAdapterScale } = body;
+    const body = await request.json().catch(() => ({}));
+    const userPrompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
 
-    if (!prompt || typeof prompt !== "string") {
-      return new Response(JSON.stringify({ error: "Missing prompt" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
+    const endpoint = env.RUNPOD_ENDPOINT_ID;
+    const key = env.RUNPOD_API_KEY;
+    if (!endpoint || !key) {
+      return json(500, { error: 'Missing RUNPOD configuration' });
     }
 
-    console.log("Reference image provided:", !!referenceImage);
-    console.log("IP-Adapter scale:", ipAdapterScale || "default (0.7)");
+    const promptConfig = await loadPromptConfig(env);
+    const allowUserPrompt = parseBool(body.allowUserPrompt, promptConfig.allowUserPrompt);
 
-    if (!env.RUNPOD_API_KEY) {
-      return new Response(JSON.stringify({ error: "Missing RUNPOD_API_KEY" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" }
-      });
+    const negativePromptOverride =
+      typeof body.negativePrompt === 'string' && body.negativePrompt.trim() !== ''
+        ? body.negativePrompt.trim()
+        : promptConfig.negativePrompt;
+
+    const width = parseNumber(body.width, 768);
+    const height = parseNumber(body.height, 1024);
+    const steps = parseNumber(body.num_inference_steps ?? body.steps, 28);
+    const guidance = parseNumber(body.guidance_scale ?? body.cfg_scale, 7);
+    const ipAdapterScale = parseNumber(body.ip_adapter_scale, 0.8);
+
+    const referenceImage = typeof body.reference_image === 'string' ? body.reference_image : undefined;
+    const seed = body.seed !== undefined ? String(body.seed) : undefined;
+
+    if (!userPrompt && !promptConfig.masterPrompt) {
+      return json(400, { error: 'Prompt required', detail: 'Provide a user prompt or configure a master prompt.' });
     }
 
-    if (!env.RUNPOD_ENDPOINT_ID) {
-      return new Response(JSON.stringify({ error: "Missing RUNPOD_ENDPOINT_ID" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    const RUNPOD_ENDPOINT = `https://api.runpod.ai/v2/${env.RUNPOD_ENDPOINT_ID}/run`;
-
-    // Submit the job to RunPod
-    console.log("Submitting job to RunPod...");
-    const createRes = await fetch(RUNPOD_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${env.RUNPOD_API_KEY}`,
-        "Content-Type": "application/json"
+    const createBody = {
+      input: {
+        prompt: userPrompt,
+        negative_prompt: negativePromptOverride || undefined,
+        master_prompt: promptConfig.masterPrompt,
+        use_master_prompt: Boolean(promptConfig.masterPrompt),
+        allow_user_prompt: allowUserPrompt,
+        width,
+        height,
+        num_inference_steps: steps,
+        guidance_scale: guidance,
+        ip_adapter_scale: ipAdapterScale,
       },
-      body: JSON.stringify({
-        input: {
-          prompt: prompt,
-          negative_prompt: "ugly, deformed, blurry, low quality, distorted, nsfw explicit",
-          reference_image: referenceImage || null, // NEW: For IP-Adapter
-          ip_adapter_scale: ipAdapterScale || 0.7, // NEW: Default to 0.7
-          width: 768,
-          height: 1024,
-          num_inference_steps: 30,
-          guidance_scale: 7.5
-        }
-      })
+    };
+
+    if (referenceImage) {
+      createBody.input.reference_image = referenceImage;
+    }
+    if (seed !== undefined) {
+      createBody.input.seed = seed;
+    }
+
+    const base = `https://api.runpod.ai/v2/${endpoint}`;
+    const headers = {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    };
+
+    const create = await fetch(`${base}/run`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(createBody),
     });
-
-    if (!createRes.ok) {
-      const text = await createRes.text();
-      console.error("RunPod request failed:", text);
-      return new Response(JSON.stringify({ error: "RunPod request failed", detail: text }), {
-        status: createRes.status,
-        headers: { "Content-Type": "application/json" }
-      });
+    if (!create.ok) {
+      const errorDetail = await create.text();
+      return json(create.status, { error: 'RunPod create failed', detail: errorDetail });
     }
 
-    const createData = await createRes.json();
-    const jobId = createData.id;
-
-    if (!jobId) {
-      return new Response(JSON.stringify({ error: "No job ID returned", detail: createData }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" }
-      });
+    const created = await create.json();
+    const id = created && (created.id || created.jobId || created['id']);
+    if (!id) {
+      return json(500, { error: 'RunPod: missing job id', detail: created });
     }
 
-    console.log("Job submitted, ID:", jobId);
-
-    // Poll for completion
-    const STATUS_ENDPOINT = `https://api.runpod.ai/v2/${env.RUNPOD_ENDPOINT_ID}/status/${jobId}`;
     const started = Date.now();
-    const timeoutMs = 120000; // 120s timeout
-    let outputUrl = null;
+    const timeoutMs = parseNumber(body.timeoutMs, 180000);
 
     while (Date.now() - started < timeoutMs) {
-      await new Promise(r => setTimeout(r, 2000)); // Poll every 2 seconds
-
-      const statusRes = await fetch(STATUS_ENDPOINT, {
-        headers: { "Authorization": `Bearer ${env.RUNPOD_API_KEY}` }
-      });
-
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const statusRes = await fetch(`${base}/status/${id}`, { headers });
       if (!statusRes.ok) {
-        const text = await statusRes.text();
-        console.error("Status check failed:", text);
-        return new Response(JSON.stringify({ error: "Status check failed", detail: text }), {
-          status: statusRes.status,
-          headers: { "Content-Type": "application/json" }
+        const detail = await statusRes.text();
+        return json(statusRes.status, { error: 'RunPod status failed', detail });
+      }
+
+      const status = await statusRes.json();
+      const state = status && (status.status || status.state || (status.execution && status.execution.status));
+      if (state === 'COMPLETED') {
+        const out = status.output || (status.execution && status.execution.output) || {};
+        const img = out.image || (out.images && out.images[0]);
+        if (!img) {
+          return json(500, { error: 'RunPod: no image in output', detail: out });
+        }
+        const image = img.startsWith('data:image') ? img : `data:image/png;base64,${img}`;
+        return json(200, {
+          image,
+          provider: 'runpod-pages',
         });
       }
 
-      const statusData = await statusRes.json();
-      console.log("Job status:", statusData.status);
-
-      if (statusData.status === "COMPLETED") {
-        // RunPod returns output in statusData.output
-        const output = statusData.output;
-        console.log("Raw output from RunPod:", JSON.stringify(output));
-
-        // Handle different output formats
-        if (typeof output === "string") {
-          outputUrl = output;
-        } else if (output && output.image) {
-          outputUrl = output.image;
-        } else if (output && output.images && Array.isArray(output.images)) {
-          outputUrl = output.images[0];
-        } else if (Array.isArray(output)) {
-          outputUrl = output[0];
-        }
-
-        console.log("Extracted outputUrl:", outputUrl);
-
-        if (outputUrl) {
-          // Check if it's a base64 data URL or a regular URL
-          if (outputUrl.startsWith('data:')) {
-            console.log("Output is base64 data URL");
-          } else if (outputUrl.startsWith('http')) {
-            console.log("Output is HTTP URL");
-          } else {
-            console.log("Output format unclear:", outputUrl.substring(0, 50));
-          }
-          break;
-        } else {
-          return new Response(JSON.stringify({
-            error: "Invalid output format",
-            detail: output
-          }), {
-            status: 500,
-            headers: { "Content-Type": "application/json" }
-          });
-        }
-      }
-
-      if (statusData.status === "FAILED") {
-        return new Response(JSON.stringify({
-          error: "Generation failed",
-          detail: statusData.error || statusData
-        }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-
-      // Status could be: IN_QUEUE, IN_PROGRESS, COMPLETED, FAILED
-    }
-
-    if (!outputUrl) {
-      return new Response(JSON.stringify({ error: "Generation timed out after 120s" }), {
-        status: 504,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    console.log("Generation complete, output URL:", outputUrl);
-
-    // Check if output is raw base64 (no data URL prefix)
-    // RunPod serverless often returns raw base64 strings
-    if (outputUrl && !outputUrl.startsWith('data:') && !outputUrl.startsWith('http')) {
-      // It's raw base64, add the data URL prefix
-      // Detect image format from base64 header
-      if (outputUrl.startsWith('iVBOR')) {
-        outputUrl = `data:image/png;base64,${outputUrl}`;
-        console.log("Converted raw base64 to PNG data URL");
-      } else if (outputUrl.startsWith('/9j/') || outputUrl.startsWith('data:image/jpeg')) {
-        outputUrl = `data:image/jpeg;base64,${outputUrl}`;
-        console.log("Converted raw base64 to JPEG data URL");
-      } else {
-        // Default to PNG
-        outputUrl = `data:image/png;base64,${outputUrl}`;
-        console.log("Converted raw base64 to PNG data URL (default)");
+      if (state === 'FAILED') {
+        return json(500, { error: 'RunPod job failed', detail: status });
       }
     }
 
-    // Return the image URL
-    return new Response(JSON.stringify({ image: outputUrl }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" }
-    });
-
-  } catch (err) {
-    console.error("Generate error:", err);
-    return new Response(JSON.stringify({
-      error: "Server error",
-      detail: err.message || String(err),
-      stack: err.stack
-    }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
+    return json(504, { error: 'RunPod: job timed out' });
+  } catch (error) {
+    return json(500, { error: 'Server error', detail: String(error) });
   }
 }
