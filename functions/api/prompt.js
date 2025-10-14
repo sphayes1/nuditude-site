@@ -10,6 +10,9 @@ const json = (status, data) =>
 const PROMPT_KEY = 'master_prompt';
 const NEGATIVE_KEY = 'negative_prompt';
 const ALLOW_KEY = 'allow_user_prompt';
+const STEPS_KEY = 'default_steps';
+const GUIDANCE_KEY = 'default_guidance';
+const LOGS_KEY = 'generation_logs';
 
 async function requireAuth(request, env) {
   const password = env.ADMIN_PASSWORD;
@@ -31,16 +34,34 @@ async function loadPromptData(env) {
   if (!env.PROMPT_STORE) {
     throw new Error('PROMPT_STORE binding missing.');
   }
-  const [masterPrompt, negativePrompt, allowValue] = await Promise.all([
+  const [masterPrompt, negativePrompt, allowValue, stepsValue, guidanceValue, logsValue] = await Promise.all([
     env.PROMPT_STORE.get(PROMPT_KEY),
     env.PROMPT_STORE.get(NEGATIVE_KEY),
     env.PROMPT_STORE.get(ALLOW_KEY),
+    env.PROMPT_STORE.get(STEPS_KEY),
+    env.PROMPT_STORE.get(GUIDANCE_KEY),
+    env.PROMPT_STORE.get(LOGS_KEY),
   ]);
+
+  let logs = [];
+  if (logsValue) {
+    try {
+      logs = JSON.parse(logsValue);
+      if (!Array.isArray(logs)) {
+        logs = [];
+      }
+    } catch (error) {
+      logs = [];
+    }
+  }
 
   return {
     masterPrompt: masterPrompt || '',
     negativePrompt: negativePrompt || '',
     allowUserPrompt: allowValue === null ? false : allowValue === 'true',
+    defaultSteps: stepsValue ? Number(stepsValue) : 28,
+    defaultGuidance: guidanceValue ? Number(guidanceValue) : 5,
+    logs,
   };
 }
 
@@ -49,11 +70,13 @@ async function savePromptData(env, data) {
     throw new Error('PROMPT_STORE binding missing.');
   }
 
-  const { masterPrompt, negativePrompt, allowUserPrompt } = data;
+  const { masterPrompt, negativePrompt, allowUserPrompt, defaultSteps, defaultGuidance } = data;
   await Promise.all([
     env.PROMPT_STORE.put(PROMPT_KEY, masterPrompt || ''),
     env.PROMPT_STORE.put(NEGATIVE_KEY, negativePrompt || ''),
     env.PROMPT_STORE.put(ALLOW_KEY, allowUserPrompt ? 'true' : 'false'),
+    env.PROMPT_STORE.put(STEPS_KEY, Number.isFinite(defaultSteps) ? String(defaultSteps) : '28'),
+    env.PROMPT_STORE.put(GUIDANCE_KEY, Number.isFinite(defaultGuidance) ? String(defaultGuidance) : '5'),
   ]);
 }
 
@@ -89,9 +112,19 @@ export async function onRequestPost(context) {
     const masterPrompt = typeof body.masterPrompt === 'string' ? body.masterPrompt.trim() : '';
     const negativePrompt = typeof body.negativePrompt === 'string' ? body.negativePrompt.trim() : '';
     const allowUserPrompt = parseBool(body.allowUserPrompt);
+    const defaultSteps = Number(body.defaultSteps);
+    const defaultGuidance = Number(body.defaultGuidance);
 
-    await savePromptData(context.env, { masterPrompt, negativePrompt, allowUserPrompt });
-    return json(200, { ok: true });
+    await savePromptData(context.env, {
+      masterPrompt,
+      negativePrompt,
+      allowUserPrompt,
+      defaultSteps: Number.isFinite(defaultSteps) ? defaultSteps : 28,
+      defaultGuidance: Number.isFinite(defaultGuidance) ? defaultGuidance : 5,
+    });
+
+    const payload = await loadPromptData(context.env);
+    return json(200, { ok: true, config: payload });
   } catch (error) {
     return json(500, { error: 'Failed to save prompt', detail: String(error) });
   }

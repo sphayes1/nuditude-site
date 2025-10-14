@@ -103,6 +103,9 @@
         gap: 16px;
         flex-wrap: wrap;
       }
+      .row.inline {
+        align-items: flex-end;
+      }
       .switch {
         display: inline-flex;
         align-items: center;
@@ -148,6 +151,39 @@
         color: #ff6f9a;
         border: 1px solid rgba(255, 76, 120, 0.35);
       }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: rgba(18, 20, 30, 0.7);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      thead {
+        background: rgba(124, 92, 255, 0.12);
+      }
+      th,
+      td {
+        padding: 10px 12px;
+        text-align: left;
+        border-bottom: 1px solid rgba(44, 50, 66, 0.6);
+        vertical-align: top;
+        font-size: 0.9rem;
+      }
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+      .thumb {
+        width: 90px;
+        height: 90px;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 1px solid rgba(124, 92, 255, 0.25);
+      }
+      .logs-empty {
+        padding: 16px;
+        color: var(--muted);
+        text-align: center;
+      }
     </style>
   </head>
   <body>
@@ -172,8 +208,20 @@
         </div>
         <p>The master prompt is always prepended to user prompts before sending jobs to the RunPod worker.</p>
         <form id="prompt-form">
-          <label for="master-prompt">Master Prompt</label>
-          <textarea id="master-prompt" placeholder="Describe your desired baseline style here."></textarea>
+          <div class="row inline">
+            <div style="flex: 1;">
+              <label for="master-prompt">Master Prompt</label>
+              <textarea id="master-prompt" placeholder="Describe your desired baseline style here."></textarea>
+            </div>
+            <div style="width: 140px;">
+              <label for="default-steps">Steps</label>
+              <input id="default-steps" type="number" min="1" max="150" step="1" value="28" />
+            </div>
+            <div style="width: 140px;">
+              <label for="default-guidance">Guidance</label>
+              <input id="default-guidance" type="number" min="1" max="20" step="0.1" value="5" />
+            </div>
+          </div>
 
           <label for="negative-prompt">Default Negative Prompt</label>
           <textarea
@@ -191,6 +239,16 @@
             <span class="status" id="save-status"></span>
           </div>
         </form>
+
+        <section id="logs-section">
+          <div class="row" style="margin-top: 12px;">
+            <h2 style="margin: 0; font-size: 1.2rem;">Recent Generations</h2>
+            <button type="button" id="refresh-logs">Refresh</button>
+          </div>
+          <div id="logs-container" style="margin-top: 12px;">
+            <div class="logs-empty">No generations logged yet.</div>
+          </div>
+        </section>
       </section>
     </main>
 
@@ -203,9 +261,13 @@
       const masterPromptInput = document.getElementById('master-prompt');
       const negativePromptInput = document.getElementById('negative-prompt');
       const allowUserPromptInput = document.getElementById('allow-user-prompt');
+      const defaultStepsInput = document.getElementById('default-steps');
+      const defaultGuidanceInput = document.getElementById('default-guidance');
       const loginStatus = document.getElementById('login-status');
       const saveStatus = document.getElementById('save-status');
       const logoutBtn = document.getElementById('logout-btn');
+      const logsContainer = document.getElementById('logs-container');
+      const refreshLogsBtn = document.getElementById('refresh-logs');
 
       const storageKey = 'nuditude-admin-token';
       let token = localStorage.getItem(storageKey) || '';
@@ -225,8 +287,8 @@
         }
       }
 
-      async function fetchConfig() {
-        saveStatus.textContent = 'Loading...';
+      async function fetchConfig(showStatus = true) {
+        saveStatus.textContent = showStatus ? 'Loading...' : '';
         const response = await fetch('/api/prompt', { headers: headers() });
         if (!response.ok) {
           throw new Error(await response.text());
@@ -234,13 +296,89 @@
         return response.json();
       }
 
-      async function loadConfig() {
+      function renderLogs(logs) {
+        if (!Array.isArray(logs) || logs.length === 0) {
+          logsContainer.innerHTML = '<div class="logs-empty">No generations logged yet.</div>';
+          return;
+        }
+
+        const rows = logs
+          .map((entry) => {
+            const {
+              timestamp,
+              combinedPrompt,
+              masterPrompt,
+              userPrompt,
+              negativePrompt,
+              width,
+              height,
+              steps,
+              guidance,
+              ipAdapterScale,
+              seed,
+              referenceImage,
+              outputImage,
+            } = entry;
+            const timeFmt = timestamp ? new Date(timestamp).toLocaleString() : '';
+            const refCell = referenceImage
+              ? `<img class="thumb" src="${referenceImage}" alt="input" />`
+              : '<span style="color: var(--muted);">None</span>';
+            const outCell = outputImage
+              ? `<img class="thumb" src="${outputImage}" alt="output" />`
+              : '<span style="color: var(--muted);">None</span>';
+            const settings = [
+              `Size: ${width}×${height}`,
+              `Steps: ${steps}`,
+              `Guidance: ${guidance}`,
+              `IP Scale: ${ipAdapterScale}`,
+              seed ? `Seed: ${seed}` : null,
+            ]
+              .filter(Boolean)
+              .join('<br>');
+            return `
+              <tr>
+                <td>${timeFmt}</td>
+                <td>${combinedPrompt || '(none)'}</td>
+                <td>${masterPrompt || '(none)'}<br><small style="color: var(--muted);">User: ${
+              userPrompt || '(none)'
+            }</small></td>
+                <td>${negativePrompt || '(default)'}</td>
+                <td>${settings}</td>
+                <td>${refCell}</td>
+                <td>${outCell}</td>
+              </tr>
+            `;
+          })
+          .join('');
+
+        logsContainer.innerHTML = `
+          <table>
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Combined Prompt</th>
+                <th>Master / User</th>
+                <th>Negative</th>
+                <th>Settings</th>
+                <th>Input</th>
+                <th>Output</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+      }
+
+      async function loadConfig(showStatus = true) {
         try {
-          const config = await fetchConfig();
+          const config = await fetchConfig(showStatus);
           masterPromptInput.value = config.masterPrompt || '';
           negativePromptInput.value = config.negativePrompt || '';
           allowUserPromptInput.checked = Boolean(config.allowUserPrompt);
-          saveStatus.textContent = 'Loaded';
+          defaultStepsInput.value = config.defaultSteps ?? 28;
+          defaultGuidanceInput.value = config.defaultGuidance ?? 5;
+          renderLogs(config.logs);
+          saveStatus.textContent = showStatus ? 'Loaded' : '';
         } catch (error) {
           saveStatus.textContent = 'Failed to load settings';
         }
@@ -275,6 +413,8 @@
           masterPrompt: masterPromptInput.value.trim(),
           negativePrompt: negativePromptInput.value.trim(),
           allowUserPrompt: allowUserPromptInput.checked,
+          defaultSteps: Number(defaultStepsInput.value) || 28,
+          defaultGuidance: Number(defaultGuidanceInput.value) || 5,
         };
 
         try {
@@ -286,13 +426,26 @@
           if (!response.ok) {
             throw new Error(await response.text());
           }
+          const saved = await response.json();
           saveStatus.textContent = 'Saved!';
+          if (saved && saved.config) {
+            masterPromptInput.value = saved.config.masterPrompt || '';
+            negativePromptInput.value = saved.config.negativePrompt || '';
+            allowUserPromptInput.checked = Boolean(saved.config.allowUserPrompt);
+            defaultStepsInput.value = saved.config.defaultSteps ?? 28;
+            defaultGuidanceInput.value = saved.config.defaultGuidance ?? 5;
+            renderLogs(saved.config.logs);
+          }
           setTimeout(() => {
             saveStatus.textContent = '';
           }, 2000);
         } catch (error) {
           saveStatus.textContent = 'Save failed';
         }
+      });
+
+      refreshLogsBtn.addEventListener('click', () => {
+        loadConfig(false);
       });
 
       logoutBtn.addEventListener('click', () => {
@@ -302,12 +455,15 @@
       });
 
       if (token) {
-        fetchConfig()
+        fetchConfig(false)
           .then(async (config) => {
             setView(true);
             masterPromptInput.value = config.masterPrompt || '';
             negativePromptInput.value = config.negativePrompt || '';
             allowUserPromptInput.checked = Boolean(config.allowUserPrompt);
+            defaultStepsInput.value = config.defaultSteps ?? 28;
+            defaultGuidanceInput.value = config.defaultGuidance ?? 5;
+            renderLogs(config.logs);
             saveStatus.textContent = '';
           })
           .catch(() => {

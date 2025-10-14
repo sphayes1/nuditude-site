@@ -7,6 +7,12 @@ const json = (status, body) =>
 const PROMPT_KEY = 'master_prompt';
 const NEGATIVE_KEY = 'negative_prompt';
 const ALLOW_KEY = 'allow_user_prompt';
+const STEPS_KEY = 'default_steps';
+const GUIDANCE_KEY = 'default_guidance';
+const LOGS_KEY = 'generation_logs';
+const MAX_LOG_ENTRIES = 25;
+const DEFAULT_STEPS = 28;
+const DEFAULT_GUIDANCE = 5;
 
 const parseBool = (value, fallback = false) => {
   if (typeof value === 'boolean') return value;
@@ -30,21 +36,63 @@ async function loadPromptConfig(env) {
       masterPrompt: '',
       negativePrompt: '',
       allowUserPrompt: false,
+      defaultSteps: DEFAULT_STEPS,
+      defaultGuidance: DEFAULT_GUIDANCE,
     };
   }
 
-  const [masterPrompt, negativePrompt, allowValue] = await Promise.all([
+  const [masterPrompt, negativePrompt, allowValue, stepsValue, guidanceValue] = await Promise.all([
     env.PROMPT_STORE.get(PROMPT_KEY),
     env.PROMPT_STORE.get(NEGATIVE_KEY),
     env.PROMPT_STORE.get(ALLOW_KEY),
+    env.PROMPT_STORE.get(STEPS_KEY),
+    env.PROMPT_STORE.get(GUIDANCE_KEY),
   ]);
 
   return {
     masterPrompt: masterPrompt || '',
     negativePrompt: negativePrompt || '',
     allowUserPrompt: allowValue === 'true',
+    defaultSteps: stepsValue ? Number(stepsValue) : DEFAULT_STEPS,
+    defaultGuidance: guidanceValue ? Number(guidanceValue) : DEFAULT_GUIDANCE,
   };
 }
+
+async function appendLog(env, entry) {
+  if (!env.PROMPT_STORE) {
+    return;
+  }
+  try {
+    const rawLogs = await env.PROMPT_STORE.get(LOGS_KEY);
+    let logs = [];
+    if (rawLogs) {
+      logs = JSON.parse(rawLogs);
+      if (!Array.isArray(logs)) {
+        logs = [];
+      }
+    }
+    logs.unshift(entry);
+    if (logs.length > MAX_LOG_ENTRIES) {
+      logs = logs.slice(0, MAX_LOG_ENTRIES);
+    }
+    await env.PROMPT_STORE.put(LOGS_KEY, JSON.stringify(logs));
+  } catch (error) {
+    console.error('Failed to append log entry:', error);
+  }
+}
+
+const ensureDataUrl = (image, defaultMime = 'image/png') => {
+  if (!image || typeof image !== 'string') {
+    return undefined;
+  }
+  if (image.startsWith('data:image')) {
+    return image;
+  }
+  if (image.startsWith('http://') || image.startsWith('https://')) {
+    return image;
+  }
+  return `data:${defaultMime};base64,${image}`;
+};
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -69,8 +117,8 @@ export async function onRequestPost(context) {
 
     const width = parseNumber(body.width, 768);
     const height = parseNumber(body.height, 1024);
-    const steps = parseNumber(body.num_inference_steps ?? body.steps, 28);
-    const guidance = parseNumber(body.guidance_scale ?? body.cfg_scale, 7);
+    const steps = parseNumber(body.num_inference_steps ?? body.steps, promptConfig.defaultSteps);
+    const guidance = parseNumber(body.guidance_scale ?? body.cfg_scale, promptConfig.defaultGuidance);
     const ipAdapterScale = parseNumber(body.ip_adapter_scale, 0.8);
 
     const referenceImage = typeof body.reference_image === 'string' ? body.reference_image : undefined;
@@ -143,7 +191,26 @@ export async function onRequestPost(context) {
         if (!img) {
           return json(500, { error: 'RunPod: no image in output', detail: out });
         }
-        const image = img.startsWith('data:image') ? img : `data:image/png;base64,${img}`;
+        const image = ensureDataUrl(img);
+
+        await appendLog(env, {
+          timestamp: new Date().toISOString(),
+          masterPrompt: promptConfig.masterPrompt,
+          userPrompt,
+          combinedPrompt: [promptConfig.masterPrompt, allowUserPrompt ? userPrompt : ''].filter(Boolean).join(', ').trim(),
+          negativePrompt: negativePromptOverride,
+          allowUserPrompt,
+          width,
+          height,
+          steps,
+          guidance,
+          ipAdapterScale,
+          seed,
+          referenceImage: ensureDataUrl(referenceImage),
+          outputImage: image,
+          runpodOutput: out,
+        });
+
         return json(200, {
           image,
           provider: 'runpod-pages',
