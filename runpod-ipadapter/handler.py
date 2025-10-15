@@ -449,9 +449,7 @@ def handler(job):
     job_input = job.get("input", {})
 
     try:
-        prompt_raw = str(job_input.get("prompt", "") or "").strip()
-        clothing_modifier = str(job_input.get("clothing_modifier", "")).strip()  # e.g., "wearing a tight red crop top"
-        body_modifier = str(job_input.get("body_modifier", "")).strip()  # e.g., "curvy hourglass figure, large breasts, thick thighs"
+        # Simplified: Only master prompt and negative prompt
         negative_prompt_raw = job_input.get("negative_prompt")
         reference_image_b64 = job_input.get("reference_image")
         # Lower FaceID scale to prevent body warping (0.5-0.6 recommended for anatomy preservation)
