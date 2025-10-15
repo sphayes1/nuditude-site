@@ -51,9 +51,9 @@ NEGATIVE_PROMPT_CACHE = {"text": DEFAULT_NEGATIVE_PROMPT, "mtime": None}
 ALLOW_USER_PROMPT_ENV = os.getenv("ALLOW_USER_PROMPT")
 MIN_MASK_FRACTION = float(os.getenv("MASK_MIN_FRACTION", "0.45"))
 FACE_PADDING_FRACTION = float(os.getenv("MASK_FACE_PADDING", "0.05"))
-USE_ADVANCED_SEGMENTATION = os.getenv("USE_SEGMENTATION", "0").lower() in {"1", "true", "yes"}
-USE_CONTROLNET = os.getenv("USE_CONTROLNET", "0").lower() in {"1", "true", "yes"}
-CONTROLNET_TYPE = os.getenv("CONTROLNET_TYPE", "depth")  # Options: depth, openpose, canny
+USE_ADVANCED_SEGMENTATION = os.getenv("USE_SEGMENTATION", "1").lower() in {"1", "true", "yes"}  # Default to ON
+USE_CONTROLNET = os.getenv("USE_CONTROLNET", "1").lower() in {"1", "true", "yes"}  # Default to ON
+CONTROLNET_TYPE = os.getenv("CONTROLNET_TYPE", "depth")  # Or "openpose" for poses like your flexing arm
 
 FACEID_CANDIDATES = [
     # Try PlusV2 first (best quality) - note: might be named differently in library
@@ -419,7 +419,7 @@ def generate_inpaint_mask(image: Image.Image, face_bbox=None, face_padding_fract
     draw.rectangle([(0, y_start), (width, height)], fill=255)
 
     # Feather the mask edges for smoother blending
-    blurred = mask.filter(ImageFilter.GaussianBlur(radius=12))
+    blurred = mask.filter(ImageFilter.GaussianBlur(radius=20))
     return blurred, y_start
 
 def generate_control_image(image: Image.Image, control_type: str):
@@ -450,13 +450,15 @@ def handler(job):
 
     try:
         prompt_raw = str(job_input.get("prompt", "") or "").strip()
+        clothing_modifier = str(job_input.get("clothing_modifier", "")).strip()  # e.g., "wearing a tight red crop top"
+        body_modifier = str(job_input.get("body_modifier", "")).strip()  # e.g., "curvy hourglass figure, large breasts, thick thighs"
         negative_prompt_raw = job_input.get("negative_prompt")
         reference_image_b64 = job_input.get("reference_image")
-        ip_adapter_scale = float(job_input.get("ip_adapter_scale", 0.8))
+        ip_adapter_scale = float(job_input.get("ip_adapter_scale", 0.9))
         width = int(job_input.get("width", 768))
         height = int(job_input.get("height", 1024))
-        num_steps = int(job_input.get("num_inference_steps", 28))
-        guidance = float(job_input.get("guidance_scale", 4.5))
+        num_steps = int(job_input.get("num_inference_steps", 50))
+        guidance = float(job_input.get("guidance_scale", 7.5))
         seed_raw = job_input.get("seed")
 
         # Face padding for mask coverage (higher = more area above face)
@@ -483,7 +485,7 @@ def handler(job):
         if prompt_raw and not allow_user_prompt:
             print("User prompt provided but ignored because allow_user_prompt is disabled.")
 
-        prompt_parts = [part for part in (master_prompt, user_prompt) if part]
+        prompt_parts = [part for part in (master_prompt, user_prompt, clothing_modifier, body_modifier) if part]
         prompt = ", ".join(prompt_parts).strip()
 
         if negative_prompt_raw is None or str(negative_prompt_raw).strip() == "":
@@ -599,6 +601,15 @@ def handler(job):
             mask_start_px = None
             segmentation_diagnostics.setdefault("segmentation_used", True)
 
+        # Ensure the mask is inverted (we want to inpaint the clothing, not the person)
+        # The segmentation mask marks the person, so we need to invert it.
+        # However, the current prompt generation seems to be creating a new image from scratch,
+        # so we might not need to invert the mask. Let's test this first.
+        #
+        # from PIL import ImageOps
+        # mask_image = ImageOps.invert(mask_image.convert("L"))
+
+
         # ⚠️ CRITICAL: Enforce face/person detection requirement
         # If neither face NOR person was detected, reject the job
         face_detected = (faceid_embeds is not None and face_bbox is not None)
@@ -629,7 +640,7 @@ def handler(job):
         if seed_value is not None:
             generator = torch.Generator(device=device).manual_seed(seed_value)
 
-        strength = float(job_input.get("strength", 0.75))  # Lower = preserve more of original
+        strength = float(job_input.get("strength", 0.65))  # Lower = preserve more of original
 
         if use_faceid and ip_adapter is not None and faceid_embeds is not None:
             print(f"Generating with FaceID (id_scale={ip_adapter_scale}, strength={strength}) ...")

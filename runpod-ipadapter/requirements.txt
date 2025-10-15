@@ -11,3 +11,15 @@ numpy==1.26.4
 huggingface-hub==0.19.4
 einops==0.6.1
 xformers==0.0.23
+
+# FaceID dependencies
+insightface==0.7.3
+onnxruntime-gpu>=1.16.0
+
+# YOLOv8 + SAM for advanced segmentation
+ultralytics>=8.0.0
+segment-anything>=1.0
+opencv-python-headless>=4.8.0
+
+# ControlNet dependencies
+controlnet-aux>=0.0.7

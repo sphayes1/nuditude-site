@@ -3,7 +3,15 @@
     "allow": [
       "Bash(git init:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(docker build:*)",
+      "Bash(docker push:*)",
+      "Bash(python:*)",
+      "Bash(docker images:*)",
+      "Bash(docker image inspect:*)",
+      "Bash(git push:*)",
+      "Bash(docker login:*)",
+      "Bash(docker tag:*)"
     ],
     "deny": [],
     "ask": []

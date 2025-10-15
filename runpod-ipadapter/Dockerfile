@@ -30,8 +30,15 @@ RUN mkdir -p /workspace/models/image_encoder && \
     https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/image_encoder/model.safetensors && \
     test -s /workspace/models/image_encoder/model.safetensors
 
-# Copy handler
+# Download SAM checkpoint (ViT-B for balance of speed/quality)
+RUN mkdir -p /workspace/models/sam && \
+    curl -L --fail -o /workspace/models/sam/sam_vit_b_01ec64.pth \
+    https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth && \
+    test -s /workspace/models/sam/sam_vit_b_01ec64.pth
+
+# Copy handler and segmentation module
 COPY handler.py /workspace/handler.py
+COPY segmentation.py /workspace/segmentation.py
 COPY requirements.txt /workspace/requirements.txt
 
 # Install any additional requirements

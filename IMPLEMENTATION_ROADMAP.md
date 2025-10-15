@@ -4,6 +4,25 @@ This roadmap breaks the high-level design into actionable milestones. Each miles
 
 ---
 
+## ⚠️ Critical Project Requirement
+
+**MANDATORY DETECTION POLICY:**
+- **If no face or person is detected in the input image, the job MUST be rejected immediately.**
+- This applies to ALL phases and ALL processing pipelines.
+- Rationale:
+  - Quality control (prevents wasted compute on invalid inputs)
+  - Safety/compliance (ensures proper subject consent verification)
+  - User experience (fast feedback on unsuitable images)
+
+**Implementation checkpoints:**
+- ✅ Phase 1: Handler rejects jobs when InsightFace fails to detect a face
+- ✅ Phase 1: Handler rejects jobs when YOLOv8/DeepLabV3 fails to detect a person
+- 🔲 Phase 2: Frontend pre-validates uploads before submission
+- 🔲 Phase 3: Backend API enforces detection before queueing jobs
+- 🔲 Phase 5: Detection failures logged for safety/audit purposes
+
+---
+
 ## Phase 1 — Enhanced Inference Pipeline (In Progress)
 1. **Robust Mask Generation**
    - Integrate YOLOv8 garment detection (initially via pre-trained ONNX/PyTorch).
