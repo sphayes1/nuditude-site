@@ -11,12 +11,14 @@ const STEPS_KEY = 'default_steps';
 const GUIDANCE_KEY = 'default_guidance';
 const STRENGTH_KEY = 'default_strength';
 const SEED_KEY = 'default_seed';
+const FACE_PADDING_KEY = 'face_padding';
 const LOGS_KEY = 'generation_logs';
 const MAX_LOG_ENTRIES = 25;
 const DEFAULT_STEPS = 28;
 const DEFAULT_GUIDANCE = 5;
 const DEFAULT_STRENGTH = 0.75;
 const DEFAULT_SEED = -1;
+const DEFAULT_FACE_PADDING = 0.05;
 
 const parseBool = (value, fallback = false) => {
   if (typeof value === 'boolean') return value;
@@ -44,10 +46,11 @@ async function loadPromptConfig(env) {
       defaultGuidance: DEFAULT_GUIDANCE,
       defaultStrength: DEFAULT_STRENGTH,
       defaultSeed: DEFAULT_SEED,
+      facePadding: DEFAULT_FACE_PADDING,
     };
   }
 
-  const [masterPrompt, negativePrompt, allowValue, stepsValue, guidanceValue, strengthValue, seedValue] = await Promise.all([
+  const [masterPrompt, negativePrompt, allowValue, stepsValue, guidanceValue, strengthValue, seedValue, facePaddingValue] = await Promise.all([
     env.PROMPT_STORE.get(PROMPT_KEY),
     env.PROMPT_STORE.get(NEGATIVE_KEY),
     env.PROMPT_STORE.get(ALLOW_KEY),
@@ -55,6 +58,7 @@ async function loadPromptConfig(env) {
     env.PROMPT_STORE.get(GUIDANCE_KEY),
     env.PROMPT_STORE.get(STRENGTH_KEY),
     env.PROMPT_STORE.get(SEED_KEY),
+    env.PROMPT_STORE.get(FACE_PADDING_KEY),
   ]);
 
   return {
@@ -65,6 +69,7 @@ async function loadPromptConfig(env) {
     defaultGuidance: guidanceValue ? Number(guidanceValue) : DEFAULT_GUIDANCE,
     defaultStrength: strengthValue ? Number(strengthValue) : DEFAULT_STRENGTH,
     defaultSeed: seedValue ? Number(seedValue) : DEFAULT_SEED,
+    facePadding: facePaddingValue ? Number(facePaddingValue) : DEFAULT_FACE_PADDING,
   };
 }
 
@@ -154,6 +159,8 @@ export async function onRequestPost(context) {
       return json(400, { error: 'reference_image is required for inpainting' });
     }
 
+    const facePadding = parseNumber(body.face_padding, promptConfig.facePadding);
+
     const createBody = {
       input: {
         prompt: userPrompt,
@@ -166,6 +173,7 @@ export async function onRequestPost(context) {
         num_inference_steps: steps,
         guidance_scale: guidance,
         strength: strength,
+        face_padding: facePadding,
         ip_adapter_scale: ipAdapterScale,
       },
     };

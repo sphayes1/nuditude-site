@@ -3,9 +3,14 @@ RunPod Serverless Handler with IP-Adapter FaceID (SDXL)
 Locks identity using face embeddings from InsightFace.
 """
 
+print("=" * 60)
+print("🚀 Handler script starting...")
+print("=" * 60, flush=True)
+
 import base64
 import inspect
 import os
+import sys
 import traceback
 from io import BytesIO
 
@@ -13,10 +18,20 @@ import numpy as np
 import runpod
 import torch
 from PIL import Image, ImageDraw, ImageFilter
-from diffusers import AutoencoderKL, StableDiffusionXLInpaintPipeline
+from diffusers import AutoencoderKL, StableDiffusionXLInpaintPipeline, ControlNetModel
+from diffusers.pipelines import StableDiffusionXLControlNetInpaintPipeline
 from huggingface_hub import hf_hub_download
 from insightface.app import FaceAnalysis
-from segmentation import SEGMENTATION_READY, generate_clothing_mask, load_models
+from controlnet_aux import MidasDetector
+from segmentation import (
+    SEGMENTATION_READY,
+    YOLO_SAM_READY,
+    generate_clothing_mask,
+    generate_clothing_mask_yolo_sam,
+    load_models,
+    load_yolo_sam_models,
+)
+import segmentation as segmentation_module
 
 try:
     from ip_adapter import ip_adapter_faceid as faceid_module
@@ -37,17 +52,29 @@ ALLOW_USER_PROMPT_ENV = os.getenv("ALLOW_USER_PROMPT")
 MIN_MASK_FRACTION = float(os.getenv("MASK_MIN_FRACTION", "0.45"))
 FACE_PADDING_FRACTION = float(os.getenv("MASK_FACE_PADDING", "0.05"))
 USE_ADVANCED_SEGMENTATION = os.getenv("USE_SEGMENTATION", "0").lower() in {"1", "true", "yes"}
+USE_CONTROLNET = os.getenv("USE_CONTROLNET", "0").lower() in {"1", "true", "yes"}
+CONTROLNET_TYPE = os.getenv("CONTROLNET_TYPE", "depth")  # Options: depth, openpose, canny
 
 FACEID_CANDIDATES = [
+    # Try PlusV2 first (best quality) - note: might be named differently in library
+    ("IPAdapterFaceIDPlusV2", "ip-adapter-faceid-plusv2_sdxl.bin"),
+    ("IPAdapterFaceIDPlusV2SDXL", "ip-adapter-faceid-plusv2_sdxl.bin"),
     ("IPAdapterFaceIDPlusV2XL", "ip-adapter-faceid-plusv2_sdxl.bin"),
+    # Then try Plus
+    ("IPAdapterFaceIDPlus", "ip-adapter-faceid-plusv2_sdxl.bin"),
     ("IPAdapterFaceIDPlusXL", "ip-adapter-faceid-plusv2_sdxl.bin"),
+    # Finally fall back to basic
     ("IPAdapterFaceIDXL", "ip-adapter-faceid_sdxl.bin"),
+    ("IPAdapterFaceID", "ip-adapter-faceid_sdxl.bin"),
 ]
 AVAILABLE_FACEID_CANDIDATES = [
     (getattr(faceid_module, name), weight, name)
     for name, weight in FACEID_CANDIDATES
     if hasattr(faceid_module, name)
 ]
+
+# Debug: Print what FaceID classes are actually available
+print(f"Available FaceID classes: {[name for _, _, name in AVAILABLE_FACEID_CANDIDATES]}")
 
 if not AVAILABLE_FACEID_CANDIDATES:
     print("Warning: no FaceID classes found in ip_adapter; running text-only.")
@@ -96,11 +123,65 @@ pipe.enable_xformers_memory_efficient_attention()
 pipe.enable_vae_slicing()
 print("SDXL pipeline loaded successfully!")
 
+# Initialize ControlNet if enabled
+CONTROLNET_AVAILABLE = False
+controlnet_pipe = None
+depth_processor = None
+if USE_CONTROLNET:
+    try:
+        print(f"Loading ControlNet ({CONTROLNET_TYPE}) for pose/depth preservation...")
+        if CONTROLNET_TYPE == "depth":
+            controlnet = ControlNetModel.from_pretrained(
+                "diffusers/controlnet-depth-sdxl-1.0",
+                torch_dtype=torch.float16,
+                variant="fp16"
+            )
+            depth_processor = MidasDetector.from_pretrained("lllyasviel/Annotators")
+            print("✓ Depth estimator loaded")
+        elif CONTROLNET_TYPE == "openpose":
+            controlnet = ControlNetModel.from_pretrained(
+                "thibaud/controlnet-openpose-sdxl-1.0",
+                torch_dtype=torch.float16
+            )
+            from controlnet_aux import OpenposeDetector
+            depth_processor = OpenposeDetector.from_pretrained("lllyasviel/Annotators")
+            print("✓ OpenPose detector loaded")
+        elif CONTROLNET_TYPE == "canny":
+            controlnet = ControlNetModel.from_pretrained(
+                "diffusers/controlnet-canny-sdxl-1.0",
+                torch_dtype=torch.float16
+            )
+            depth_processor = None  # Canny uses cv2 directly
+            print("✓ Canny edge detector will use OpenCV")
+        else:
+            raise ValueError(f"Unsupported CONTROLNET_TYPE: {CONTROLNET_TYPE}")
+
+        # Create ControlNet inpaint pipeline
+        controlnet_pipe = StableDiffusionXLControlNetInpaintPipeline.from_pretrained(
+            "stabilityai/stable-diffusion-xl-base-1.0",
+            controlnet=controlnet,
+            vae=vae,
+            torch_dtype=torch.float16,
+            variant="fp16",
+            use_safetensors=True
+        ).to(device)
+        controlnet_pipe.enable_xformers_memory_efficient_attention()
+        controlnet_pipe.enable_vae_slicing()
+        CONTROLNET_AVAILABLE = True
+        print(f"✓ ControlNet ({CONTROLNET_TYPE}) ready for depth/pose preservation")
+    except Exception as controlnet_error:
+        print(f"❌ ControlNet initialization failed: {controlnet_error}")
+        traceback.print_exc()
+        CONTROLNET_AVAILABLE = False
+        controlnet_pipe = None
+        depth_processor = None
+
 FACEID_AVAILABLE = False
 face_app = None
 ip_adapter = None
 faceid_error = None
 SEGMENTATION_AVAILABLE = False
+YOLO_SAM_AVAILABLE = False
 
 print("Loading FaceID (IP-Adapter) ...")
 for faceid_class, weight_filename, class_name in AVAILABLE_FACEID_CANDIDATES:
@@ -188,14 +269,35 @@ if not FACEID_AVAILABLE:
 print("=" * 60)
 # Attempt to initialize advanced segmentation models.
 if USE_ADVANCED_SEGMENTATION:
+    # Try loading YOLOv8 + SAM first (preferred)
     try:
-        load_models()
-        SEGMENTATION_AVAILABLE = SEGMENTATION_READY
-    except Exception as segmentation_error:
-        SEGMENTATION_AVAILABLE = False
-        USE_ADVANCED_SEGMENTATION = False
-        print(f"Failed to load segmentation models: {segmentation_error}")
+        print("Attempting to load YOLOv8 + SAM segmentation models...")
+        load_yolo_sam_models()
+        # Access the module attribute directly to get the current value
+        YOLO_SAM_AVAILABLE = segmentation_module.YOLO_SAM_READY
+        if YOLO_SAM_AVAILABLE:
+            print("✓ YOLOv8 + SAM ready for advanced segmentation")
+        else:
+            print("YOLOv8 + SAM not available, trying DeepLabV3 fallback...")
+    except Exception as yolo_sam_error:
+        YOLO_SAM_AVAILABLE = False
+        print(f"YOLOv8 + SAM initialization failed: {yolo_sam_error}")
         traceback.print_exc()
+
+    # Fall back to DeepLabV3 if YOLOv8+SAM unavailable
+    if not YOLO_SAM_AVAILABLE:
+        try:
+            print("Loading DeepLabV3 segmentation fallback...")
+            load_models()
+            # Access the module attribute directly to get the current value
+            SEGMENTATION_AVAILABLE = segmentation_module.SEGMENTATION_READY
+            if SEGMENTATION_AVAILABLE:
+                print("✓ DeepLabV3 loaded as fallback segmentation")
+        except Exception as segmentation_error:
+            SEGMENTATION_AVAILABLE = False
+            USE_ADVANCED_SEGMENTATION = False
+            print(f"Failed to load DeepLabV3 fallback: {segmentation_error}")
+            traceback.print_exc()
 
 print("Worker ready! Waiting for jobs...")
 print("=" * 60)
@@ -285,7 +387,22 @@ def get_face_embedding(pil_image: Image.Image):
         print(f"Embedding error: {e}")
         return None, None
 
-def generate_inpaint_mask(image: Image.Image, face_bbox=None):
+def generate_inpaint_mask(image: Image.Image, face_bbox=None, face_padding_fraction=None):
+    """
+    Generate an inpainting mask for clothing replacement.
+
+    Args:
+        image: The input PIL Image
+        face_bbox: Optional face bounding box (x1, y1, x2, y2)
+        face_padding_fraction: Optional padding above face as fraction of image height.
+                               If None, uses FACE_PADDING_FRACTION constant.
+
+    Returns:
+        Tuple of (mask_image, y_start_pixel)
+    """
+    if face_padding_fraction is None:
+        face_padding_fraction = FACE_PADDING_FRACTION
+
     width, height = image.size
     mask = Image.new("L", (width, height), 0)
     draw = ImageDraw.Draw(mask)
@@ -293,7 +410,7 @@ def generate_inpaint_mask(image: Image.Image, face_bbox=None):
 
     if face_bbox:
         _, y1, _, y2 = face_bbox
-        computed = int(y2 + FACE_PADDING_FRACTION * height)
+        computed = int(y2 + face_padding_fraction * height)
         y_start = max(threshold, min(height, computed))
     else:
         y_start = max(threshold, int(height * 0.35))
@@ -304,6 +421,29 @@ def generate_inpaint_mask(image: Image.Image, face_bbox=None):
     # Feather the mask edges for smoother blending
     blurred = mask.filter(ImageFilter.GaussianBlur(radius=12))
     return blurred, y_start
+
+def generate_control_image(image: Image.Image, control_type: str):
+    """Generate control conditioning image (depth, pose, or canny edge)."""
+    try:
+        if control_type == "depth" and depth_processor is not None:
+            depth_image = depth_processor(image)
+            return depth_image
+        elif control_type == "openpose" and depth_processor is not None:
+            pose_image = depth_processor(image)
+            return pose_image
+        elif control_type == "canny":
+            import cv2
+            image_array = np.array(image)
+            gray = cv2.cvtColor(image_array, cv2.COLOR_RGB2GRAY)
+            edges = cv2.Canny(gray, 100, 200)
+            edges_rgb = cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB)
+            return Image.fromarray(edges_rgb)
+        else:
+            return None
+    except Exception as e:
+        print(f"Error generating {control_type} control image: {e}")
+        traceback.print_exc()
+        return None
 
 def handler(job):
     job_input = job.get("input", {})
@@ -318,6 +458,14 @@ def handler(job):
         num_steps = int(job_input.get("num_inference_steps", 28))
         guidance = float(job_input.get("guidance_scale", 4.5))
         seed_raw = job_input.get("seed")
+
+        # Face padding for mask coverage (higher = more area above face)
+        face_padding_override = job_input.get("face_padding")
+        if face_padding_override is not None:
+            face_padding_fraction = float(face_padding_override)
+            print(f"Using custom face padding: {face_padding_fraction}")
+        else:
+            face_padding_fraction = FACE_PADDING_FRACTION
 
         use_master_prompt = parse_bool(job_input.get("use_master_prompt"), True)
         allow_user_prompt_default = parse_bool(ALLOW_USER_PROMPT_ENV, False)
@@ -397,28 +545,78 @@ def handler(job):
         segmentation_diagnostics = {}
         mask_image = None
         mask_start_px = None
+        person_detected = False  # Track if any person detection method succeeds
 
-        if USE_ADVANCED_SEGMENTATION and SEGMENTATION_AVAILABLE:
-            try:
-                mask_candidate, segmentation_diagnostics = generate_clothing_mask(reference_image)
-                if mask_candidate is not None:
-                    print("Segmentation mask generated via advanced pipeline.")
-                    mask_image = mask_candidate.convert("L")
-            except Exception as segmentation_error:
-                segmentation_diagnostics = {
-                    "segmentation_used": False,
-                    "reason": f"Segmentation failure: {segmentation_error}"
-                }
-                print(f"Segmentation failed; falling back to heuristic mask: {segmentation_error}")
-                traceback.print_exc()
+        if USE_ADVANCED_SEGMENTATION:
+            # Priority 1: Try YOLOv8 + SAM (most accurate)
+            if YOLO_SAM_AVAILABLE:
+                try:
+                    print("Attempting YOLOv8 + SAM segmentation...")
+                    mask_candidate, segmentation_diagnostics = generate_clothing_mask_yolo_sam(
+                        reference_image, face_bbox
+                    )
+                    if mask_candidate is not None:
+                        print("✓ YOLOv8 + SAM mask generated successfully")
+                        mask_image = mask_candidate.convert("L")
+                        person_detected = True  # YOLOv8 successfully detected a person
+                except Exception as yolo_sam_error:
+                    segmentation_diagnostics = {
+                        "segmentation_used": False,
+                        "reason": f"YOLOv8+SAM error: {yolo_sam_error}",
+                        "method": "yolo_sam_failed"
+                    }
+                    print(f"YOLOv8+SAM segmentation failed: {yolo_sam_error}")
+                    traceback.print_exc()
 
+            # Priority 2: Fall back to DeepLabV3 (if YOLOv8+SAM failed or unavailable)
+            if mask_image is None and SEGMENTATION_AVAILABLE:
+                try:
+                    print("Attempting DeepLabV3 segmentation fallback...")
+                    mask_candidate, segmentation_diagnostics = generate_clothing_mask(
+                        reference_image, face_bbox
+                    )
+                    if mask_candidate is not None:
+                        print("✓ DeepLabV3 fallback mask generated")
+                        mask_image = mask_candidate.convert("L")
+                        person_detected = True  # DeepLabV3 successfully detected a person
+                except Exception as segmentation_error:
+                    segmentation_diagnostics = {
+                        "segmentation_used": False,
+                        "reason": f"DeepLabV3 error: {segmentation_error}",
+                        "method": "deeplabv3_failed"
+                    }
+                    print(f"DeepLabV3 segmentation failed: {segmentation_error}")
+                    traceback.print_exc()
+
+        # Priority 3: Heuristic mask (final fallback)
         if mask_image is None:
-            mask_image, mask_start_px = generate_inpaint_mask(reference_image, face_bbox)
+            print("Using heuristic rectangle mask (all segmentation methods unavailable or failed)")
+            mask_image, mask_start_px = generate_inpaint_mask(reference_image, face_bbox, face_padding_fraction)
             segmentation_diagnostics.setdefault("segmentation_used", False)
             segmentation_diagnostics.setdefault("reason", "Heuristic mask applied")
+            segmentation_diagnostics.setdefault("method", "heuristic")
         else:
             mask_start_px = None
             segmentation_diagnostics.setdefault("segmentation_used", True)
+
+        # ⚠️ CRITICAL: Enforce face/person detection requirement
+        # If neither face NOR person was detected, reject the job
+        face_detected = (faceid_embeds is not None and face_bbox is not None)
+
+        if not face_detected and not person_detected:
+            error_message = (
+                "No face or person detected in the input image. "
+                "This application requires a clearly visible person in the photo. "
+                "Please upload a different image with a person clearly visible."
+            )
+            print(f"❌ JOB REJECTED: {error_message}")
+            return {
+                "error": error_message,
+                "rejection_reason": "no_detection",
+                "face_detected": False,
+                "person_detected": False,
+                "segmentation": segmentation_diagnostics
+            }
 
         mask_start_fraction = round(mask_start_px / height, 4) if height and mask_start_px is not None else None
         if mask_start_fraction is not None:
@@ -431,8 +629,10 @@ def handler(job):
         if seed_value is not None:
             generator = torch.Generator(device=device).manual_seed(seed_value)
 
+        strength = float(job_input.get("strength", 0.75))  # Lower = preserve more of original
+
         if use_faceid and ip_adapter is not None and faceid_embeds is not None:
-            print(f"Generating with FaceID (id_scale={ip_adapter_scale}) ...")
+            print(f"Generating with FaceID (id_scale={ip_adapter_scale}, strength={strength}) ...")
             faceid_kwargs = dict(
                 faceid_embeds=faceid_embeds,
                 prompt=prompt,
@@ -446,28 +646,83 @@ def handler(job):
             )
             if seed_value is not None:
                 faceid_kwargs["seed"] = seed_value
-            output_images = ip_adapter.generate(**faceid_kwargs)
+            # Try to add strength if the FaceID method supports it
+            try:
+                faceid_kwargs["strength"] = strength
+                output_images = ip_adapter.generate(**faceid_kwargs)
+            except TypeError:
+                # If strength not supported, remove it and try again
+                print("Note: FaceID adapter doesn't support strength parameter")
+                faceid_kwargs.pop("strength", None)
+                output_images = ip_adapter.generate(**faceid_kwargs)
             output_image = output_images[0]
         else:
-            print("Generating with inpainting (no FaceID) ...")
-            output_image = pipe(
-                prompt=prompt,
-                negative_prompt=negative_prompt,
-                num_inference_steps=num_steps,
-                guidance_scale=guidance,
-                image=reference_image,
-                mask_image=mask_image,
-                generator=generator
-            ).images[0]
+            # Use ControlNet if available for better structure preservation
+            if CONTROLNET_AVAILABLE and controlnet_pipe is not None:
+                print(f"Generating with ControlNet {CONTROLNET_TYPE} (no FaceID, strength={strength}) ...")
+                control_image = generate_control_image(reference_image, CONTROLNET_TYPE)
+                if control_image is not None:
+                    output_image = controlnet_pipe(
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        num_inference_steps=num_steps,
+                        guidance_scale=guidance,
+                        image=reference_image,
+                        mask_image=mask_image,
+                        control_image=control_image,
+                        strength=strength,
+                        controlnet_conditioning_scale=0.5,  # Control strength (0-1)
+                        generator=generator
+                    ).images[0]
+                else:
+                    print("⚠️ Control image generation failed, falling back to regular inpainting")
+                    output_image = pipe(
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        num_inference_steps=num_steps,
+                        guidance_scale=guidance,
+                        image=reference_image,
+                        mask_image=mask_image,
+                        strength=strength,
+                        generator=generator
+                    ).images[0]
+            else:
+                print(f"Generating with inpainting (no FaceID, strength={strength}) ...")
+                output_image = pipe(
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    num_inference_steps=num_steps,
+                    guidance_scale=guidance,
+                    image=reference_image,
+                    mask_image=mask_image,
+                    strength=strength,
+                    generator=generator
+                ).images[0]
 
         print("Converting output to base64 ...")
         output_b64 = image_to_base64(output_image)
         print("Generation complete.")
 
-        return {
+        # Convert numpy types to Python native types for JSON serialization
+        def convert_to_json_serializable(obj):
+            """Recursively convert numpy types to Python native types."""
+            if isinstance(obj, dict):
+                return {k: convert_to_json_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [convert_to_json_serializable(item) for item in obj]
+            elif isinstance(obj, (np.integer, np.floating)):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            return obj
+
+        response = {
             "image": output_b64,
             "used_faceid": use_faceid and ip_adapter is not None and faceid_embeds is not None,
+            "used_controlnet": CONTROLNET_AVAILABLE and not use_faceid,
+            "controlnet_type": CONTROLNET_TYPE if CONTROLNET_AVAILABLE else None,
             "id_scale": ip_adapter_scale if use_faceid else None,
+            "strength": strength,
             "width": width,
             "height": height,
             "num_inference_steps": num_steps,
@@ -476,9 +731,10 @@ def handler(job):
             "user_prompt_allowed": allow_user_prompt,
             "mask_image": mask_b64,
             "mask_start_fraction": mask_start_fraction,
-            "face_bbox": list(face_bbox) if face_bbox else None,
-            "segmentation": segmentation_diagnostics
+            "face_bbox": [float(x) for x in face_bbox] if face_bbox else None,
+            "segmentation": convert_to_json_serializable(segmentation_diagnostics)
         }
+        return response
 
     except Exception as e:
         error_msg = str(e)
@@ -487,5 +743,10 @@ def handler(job):
         print(error_trace)
         return {"error": error_msg, "traceback": error_trace}
 
-print("\nStarting RunPod serverless handler ...")
-runpod.serverless.start({"handler": handler})
+print("\nStarting RunPod serverless handler ...", flush=True)
+try:
+    runpod.serverless.start({"handler": handler})
+except Exception as startup_error:
+    print(f"\n❌ FATAL ERROR: Handler failed to start: {startup_error}")
+    traceback.print_exc()
+    sys.exit(1)

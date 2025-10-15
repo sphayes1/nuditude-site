@@ -14,6 +14,7 @@ const STEPS_KEY = 'default_steps';
 const GUIDANCE_KEY = 'default_guidance';
 const STRENGTH_KEY = 'default_strength';
 const SEED_KEY = 'default_seed';
+const FACE_PADDING_KEY = 'face_padding';
 const LOGS_KEY = 'generation_logs';
 
 async function requireAuth(request, env) {
@@ -36,7 +37,7 @@ async function loadPromptData(env) {
   if (!env.PROMPT_STORE) {
     throw new Error('PROMPT_STORE binding missing.');
   }
-  const [masterPrompt, negativePrompt, allowValue, stepsValue, guidanceValue, strengthValue, seedValue, logsValue] = await Promise.all([
+  const [masterPrompt, negativePrompt, allowValue, stepsValue, guidanceValue, strengthValue, seedValue, facePaddingValue, logsValue] = await Promise.all([
     env.PROMPT_STORE.get(PROMPT_KEY),
     env.PROMPT_STORE.get(NEGATIVE_KEY),
     env.PROMPT_STORE.get(ALLOW_KEY),
@@ -44,6 +45,7 @@ async function loadPromptData(env) {
     env.PROMPT_STORE.get(GUIDANCE_KEY),
     env.PROMPT_STORE.get(STRENGTH_KEY),
     env.PROMPT_STORE.get(SEED_KEY),
+    env.PROMPT_STORE.get(FACE_PADDING_KEY),
     env.PROMPT_STORE.get(LOGS_KEY),
   ]);
 
@@ -67,6 +69,7 @@ async function loadPromptData(env) {
     defaultGuidance: guidanceValue ? Number(guidanceValue) : 5,
     defaultStrength: strengthValue ? Number(strengthValue) : 0.75,
     defaultSeed: seedValue ? Number(seedValue) : -1,
+    facePadding: facePaddingValue ? Number(facePaddingValue) : 0.05,
     logs,
   };
 }
@@ -76,7 +79,7 @@ async function savePromptData(env, data) {
     throw new Error('PROMPT_STORE binding missing.');
   }
 
-  const { masterPrompt, negativePrompt, allowUserPrompt, defaultSteps, defaultGuidance, defaultStrength, defaultSeed } = data;
+  const { masterPrompt, negativePrompt, allowUserPrompt, defaultSteps, defaultGuidance, defaultStrength, defaultSeed, facePadding } = data;
   await Promise.all([
     env.PROMPT_STORE.put(PROMPT_KEY, masterPrompt || ''),
     env.PROMPT_STORE.put(NEGATIVE_KEY, negativePrompt || ''),
@@ -85,6 +88,7 @@ async function savePromptData(env, data) {
     env.PROMPT_STORE.put(GUIDANCE_KEY, Number.isFinite(defaultGuidance) ? String(defaultGuidance) : '5'),
     env.PROMPT_STORE.put(STRENGTH_KEY, Number.isFinite(defaultStrength) ? String(defaultStrength) : '0.75'),
     env.PROMPT_STORE.put(SEED_KEY, Number.isFinite(defaultSeed) ? String(defaultSeed) : '-1'),
+    env.PROMPT_STORE.put(FACE_PADDING_KEY, Number.isFinite(facePadding) ? String(facePadding) : '0.05'),
   ]);
 }
 
@@ -124,6 +128,7 @@ export async function onRequestPost(context) {
     const defaultGuidance = Number(body.defaultGuidance);
     const defaultStrength = Number(body.defaultStrength);
     const defaultSeed = Number(body.defaultSeed);
+    const facePadding = Number(body.facePadding);
 
     await savePromptData(context.env, {
       masterPrompt,
@@ -133,6 +138,7 @@ export async function onRequestPost(context) {
       defaultGuidance: Number.isFinite(defaultGuidance) ? defaultGuidance : 5,
       defaultStrength: Number.isFinite(defaultStrength) ? defaultStrength : 0.75,
       defaultSeed: Number.isFinite(defaultSeed) ? defaultSeed : -1,
+      facePadding: Number.isFinite(facePadding) ? facePadding : 0.05,
     });
 
     const payload = await loadPromptData(context.env);

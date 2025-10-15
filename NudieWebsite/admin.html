@@ -232,6 +232,16 @@
                 <input id="default-seed" type="number" min="-1" step="1" value="-1" placeholder="Random" />
               </div>
             </div>
+
+            <div class="row">
+              <div style="flex: 1;">
+                <label for="face-padding">Face Padding</label>
+                <input id="face-padding" type="number" min="0.0" max="0.5" step="0.01" value="0.05" />
+                <small style="color: var(--muted); display: block; margin-top: 4px;">
+                  Higher = more area above face included in mask (0.15-0.20 for full outfit swaps)
+                </small>
+              </div>
+            </div>
           </div>
 
           <label for="negative-prompt">Default Negative Prompt</label>
@@ -276,6 +286,7 @@
       const defaultGuidanceInput = document.getElementById('default-guidance');
       const defaultStrengthInput = document.getElementById('default-strength');
       const defaultSeedInput = document.getElementById('default-seed');
+      const facePaddingInput = document.getElementById('face-padding');
       const loginStatus = document.getElementById('login-status');
       const saveStatus = document.getElementById('save-status');
       const logoutBtn = document.getElementById('logout-btn');
@@ -412,6 +423,7 @@
           defaultGuidanceInput.value = config.defaultGuidance ?? 5;
           defaultStrengthInput.value = config.defaultStrength ?? 0.75;
           defaultSeedInput.value = config.defaultSeed ?? -1;
+          facePaddingInput.value = config.facePadding ?? 0.05;
           renderLogs(config.logs);
           saveStatus.textContent = showStatus ? 'Loaded' : '';
         } catch (error) {
@@ -452,6 +464,7 @@
           defaultGuidance: Number(defaultGuidanceInput.value) || 5,
           defaultStrength: Number(defaultStrengthInput.value) || 0.75,
           defaultSeed: Number(defaultSeedInput.value) ?? -1,
+          facePadding: Number(facePaddingInput.value) || 0.05,
         };
 
         try {
@@ -473,6 +486,7 @@
             defaultGuidanceInput.value = saved.config.defaultGuidance ?? 5;
             defaultStrengthInput.value = saved.config.defaultStrength ?? 0.75;
             defaultSeedInput.value = saved.config.defaultSeed ?? -1;
+            facePaddingInput.value = saved.config.facePadding ?? 0.05;
             renderLogs(saved.config.logs);
           }
           setTimeout(() => {
@@ -504,6 +518,7 @@
             defaultGuidanceInput.value = config.defaultGuidance ?? 5;
             defaultStrengthInput.value = config.defaultStrength ?? 0.75;
             defaultSeedInput.value = config.defaultSeed ?? -1;
+            facePaddingInput.value = config.facePadding ?? 0.05;
             renderLogs(config.logs);
             saveStatus.textContent = '';
           })
