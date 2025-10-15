@@ -53,7 +53,8 @@ MIN_MASK_FRACTION = float(os.getenv("MASK_MIN_FRACTION", "0.45"))
 FACE_PADDING_FRACTION = float(os.getenv("MASK_FACE_PADDING", "0.05"))
 USE_ADVANCED_SEGMENTATION = os.getenv("USE_SEGMENTATION", "1").lower() in {"1", "true", "yes"}  # Default to ON
 USE_CONTROLNET = os.getenv("USE_CONTROLNET", "1").lower() in {"1", "true", "yes"}  # Default to ON
-CONTROLNET_TYPE = os.getenv("CONTROLNET_TYPE", "depth")  # Or "openpose" for poses like your flexing arm
+CONTROLNET_TYPE = os.getenv("CONTROLNET_TYPE", "openpose")  # Options: openpose (best for poses), depth, canny
+USE_FACEID = os.getenv("USE_FACEID", "0").lower() in {"1", "true", "yes"}  # Default to OFF - ControlNet is better for full body
 
 FACEID_CANDIDATES = [
     # Try PlusV2 first (best quality) - note: might be named differently in library
@@ -104,6 +105,8 @@ if NEGATIVE_PROMPT_PATH:
 print(f"Master prompt path: {MASTER_PROMPT_PATH or 'disabled'}")
 print(f"Negative prompt path: {NEGATIVE_PROMPT_PATH or 'disabled'}")
 print(f"Advanced segmentation enabled: {USE_ADVANCED_SEGMENTATION}")
+print(f"ControlNet enabled: {USE_CONTROLNET} (type: {CONTROLNET_TYPE if USE_CONTROLNET else 'N/A'})")
+print(f"FaceID enabled: {USE_FACEID} (pure ControlNet+Inpainting mode if disabled)")
 
 print("Loading VAE...")
 vae = AutoencoderKL.from_pretrained(
@@ -520,7 +523,13 @@ def handler(job):
         width = reference_image.width
         height = reference_image.height
 
-        use_faceid = FACEID_AVAILABLE
+        # Job-level ControlNet and FaceID settings (override defaults)
+        job_use_controlnet = parse_bool(job_input.get("use_controlnet"), USE_CONTROLNET)
+        job_controlnet_type = job_input.get("controlnet_type", CONTROLNET_TYPE)
+        job_controlnet_scale = float(job_input.get("controlnet_scale", 0.5))
+        job_use_faceid = parse_bool(job_input.get("use_faceid"), USE_FACEID)
+
+        use_faceid = job_use_faceid and FACEID_AVAILABLE  # Respect job-level setting
         faceid_embeds = None
         face_bbox = None
 
@@ -674,10 +683,10 @@ def handler(job):
                 output_images = ip_adapter.generate(**faceid_kwargs)
             output_image = output_images[0]
         else:
-            # Use ControlNet if available for better structure preservation
-            if CONTROLNET_AVAILABLE and controlnet_pipe is not None:
-                print(f"Generating with ControlNet {CONTROLNET_TYPE} (no FaceID, strength={strength}) ...")
-                control_image = generate_control_image(reference_image, CONTROLNET_TYPE)
+            # Use ControlNet if available and enabled for better structure preservation
+            if job_use_controlnet and CONTROLNET_AVAILABLE and controlnet_pipe is not None:
+                print(f"Generating with ControlNet {job_controlnet_type} (no FaceID, strength={strength}, scale={job_controlnet_scale}) ...")
+                control_image = generate_control_image(reference_image, job_controlnet_type)
                 if control_image is not None:
                     output_image = controlnet_pipe(
                         prompt=prompt,
@@ -688,7 +697,7 @@ def handler(job):
                         mask_image=mask_image,
                         control_image=control_image,
                         strength=strength,
-                        controlnet_conditioning_scale=0.5,  # Control strength (0-1)
+                        controlnet_conditioning_scale=job_controlnet_scale,  # Use job-level scale
                         generator=generator
                     ).images[0]
                 else:
@@ -745,7 +754,8 @@ def handler(job):
             "image": output_b64,
             "used_faceid": use_faceid and ip_adapter is not None and faceid_embeds is not None,
             "used_controlnet": used_controlnet_flag,
-            "controlnet_type": CONTROLNET_TYPE if CONTROLNET_AVAILABLE else None,
+            "controlnet_type": job_controlnet_type if job_use_controlnet and CONTROLNET_AVAILABLE else None,
+            "controlnet_scale": job_controlnet_scale if job_use_controlnet and CONTROLNET_AVAILABLE else None,
             "id_scale": ip_adapter_scale if use_faceid else None,
             "strength": strength,
             "guidance_scale": guidance,

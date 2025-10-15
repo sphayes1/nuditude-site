@@ -245,6 +245,57 @@
                 </small>
               </div>
             </div>
+
+            <div class="row">
+              <div style="flex: 1;">
+                <label for="controlnet-enabled">ControlNet</label>
+                <label class="switch">
+                  <input type="checkbox" id="controlnet-enabled" checked />
+                  <span>Enable ControlNet for pose preservation</span>
+                </label>
+                <small style="color: var(--muted); display: block; margin-top: 4px;">
+                  Recommended: keeps pose/structure intact during generation
+                </small>
+              </div>
+              <div style="flex: 1;">
+                <label for="controlnet-type">ControlNet Type</label>
+                <select id="controlnet-type" style="width: 100%; border-radius: 10px; border: 1px solid var(--border); background: rgba(12, 14, 22, 0.85); color: var(--text); padding: 12px 14px; font-size: 0.95rem;">
+                  <option value="openpose">OpenPose (best for poses)</option>
+                  <option value="depth">Depth (good for general structure)</option>
+                  <option value="canny">Canny (edge detection)</option>
+                </select>
+                <small style="color: var(--muted); display: block; margin-top: 4px;">
+                  OpenPose: best for preserving arm/leg positions
+                </small>
+              </div>
+              <div style="flex: 1;">
+                <label for="controlnet-scale">ControlNet Scale</label>
+                <input id="controlnet-scale" type="number" min="0.0" max="1.0" step="0.05" value="0.5" />
+                <small style="color: var(--muted); display: block; margin-top: 4px;">
+                  Higher = stronger pose preservation (0.5-0.7 recommended)
+                </small>
+              </div>
+            </div>
+
+            <div class="row">
+              <div style="flex: 1;">
+                <label for="faceid-enabled">FaceID</label>
+                <label class="switch">
+                  <input type="checkbox" id="faceid-enabled" />
+                  <span>Enable FaceID for identity preservation</span>
+                </label>
+                <small style="color: var(--muted); display: block; margin-top: 4px;">
+                  Warning: May interfere with body anatomy. Use only if needed.
+                </small>
+              </div>
+              <div style="flex: 1;">
+                <label for="faceid-scale">FaceID Scale</label>
+                <input id="faceid-scale" type="number" min="0.0" max="1.0" step="0.05" value="0.55" />
+                <small style="color: var(--muted); display: block; margin-top: 4px;">
+                  Lower = less body warping (0.5-0.6 recommended)
+                </small>
+              </div>
+            </div>
           </div>
 
           <label for="negative-prompt">Default Negative Prompt</label>
@@ -290,6 +341,11 @@
       const defaultStrengthInput = document.getElementById('default-strength');
       const defaultSeedInput = document.getElementById('default-seed');
       const facePaddingInput = document.getElementById('face-padding');
+      const controlnetEnabledInput = document.getElementById('controlnet-enabled');
+      const controlnetTypeInput = document.getElementById('controlnet-type');
+      const controlnetScaleInput = document.getElementById('controlnet-scale');
+      const faceidEnabledInput = document.getElementById('faceid-enabled');
+      const faceidScaleInput = document.getElementById('faceid-scale');
       const loginStatus = document.getElementById('login-status');
       const saveStatus = document.getElementById('save-status');
       const logoutBtn = document.getElementById('logout-btn');
@@ -427,6 +483,11 @@
           defaultStrengthInput.value = config.defaultStrength ?? 0.45;
           defaultSeedInput.value = config.defaultSeed ?? -1;
           facePaddingInput.value = config.facePadding ?? 0.05;
+          controlnetEnabledInput.checked = config.controlnetEnabled ?? true;
+          controlnetTypeInput.value = config.controlnetType || 'openpose';
+          controlnetScaleInput.value = config.controlnetScale ?? 0.5;
+          faceidEnabledInput.checked = config.faceidEnabled ?? false;
+          faceidScaleInput.value = config.faceidScale ?? 0.55;
           renderLogs(config.logs);
           saveStatus.textContent = showStatus ? 'Loaded' : '';
         } catch (error) {
@@ -468,6 +529,11 @@
           defaultStrength: Number(defaultStrengthInput.value) || 0.45,
           defaultSeed: Number(defaultSeedInput.value) ?? -1,
           facePadding: Number(facePaddingInput.value) || 0.05,
+          controlnetEnabled: controlnetEnabledInput.checked,
+          controlnetType: controlnetTypeInput.value || 'openpose',
+          controlnetScale: Number(controlnetScaleInput.value) || 0.5,
+          faceidEnabled: faceidEnabledInput.checked,
+          faceidScale: Number(faceidScaleInput.value) || 0.55,
         };
 
         try {
@@ -490,6 +556,11 @@
             defaultStrengthInput.value = saved.config.defaultStrength ?? 0.75;
             defaultSeedInput.value = saved.config.defaultSeed ?? -1;
             facePaddingInput.value = saved.config.facePadding ?? 0.05;
+            controlnetEnabledInput.checked = saved.config.controlnetEnabled ?? true;
+            controlnetTypeInput.value = saved.config.controlnetType || 'openpose';
+            controlnetScaleInput.value = saved.config.controlnetScale ?? 0.5;
+            faceidEnabledInput.checked = saved.config.faceidEnabled ?? false;
+            faceidScaleInput.value = saved.config.faceidScale ?? 0.55;
             renderLogs(saved.config.logs);
           }
           setTimeout(() => {
@@ -522,6 +593,11 @@
             defaultStrengthInput.value = config.defaultStrength ?? 0.75;
             defaultSeedInput.value = config.defaultSeed ?? -1;
             facePaddingInput.value = config.facePadding ?? 0.05;
+            controlnetEnabledInput.checked = config.controlnetEnabled ?? true;
+            controlnetTypeInput.value = config.controlnetType || 'openpose';
+            controlnetScaleInput.value = config.controlnetScale ?? 0.5;
+            faceidEnabledInput.checked = config.faceidEnabled ?? false;
+            faceidScaleInput.value = config.faceidScale ?? 0.55;
             renderLogs(config.logs);
             saveStatus.textContent = '';
           })

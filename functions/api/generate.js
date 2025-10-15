@@ -12,6 +12,11 @@ const GUIDANCE_KEY = 'default_guidance';
 const STRENGTH_KEY = 'default_strength';
 const SEED_KEY = 'default_seed';
 const FACE_PADDING_KEY = 'face_padding';
+const CONTROLNET_ENABLED_KEY = 'controlnet_enabled';
+const CONTROLNET_TYPE_KEY = 'controlnet_type';
+const CONTROLNET_SCALE_KEY = 'controlnet_scale';
+const FACEID_ENABLED_KEY = 'faceid_enabled';
+const FACEID_SCALE_KEY = 'faceid_scale';
 const LOGS_KEY = 'generation_logs';
 const MAX_LOG_ENTRIES = 25;
 // Optimized defaults for anatomy preservation and quality
@@ -51,7 +56,7 @@ async function loadPromptConfig(env) {
     };
   }
 
-  const [masterPrompt, negativePrompt, allowValue, stepsValue, guidanceValue, strengthValue, seedValue, facePaddingValue] = await Promise.all([
+  const [masterPrompt, negativePrompt, allowValue, stepsValue, guidanceValue, strengthValue, seedValue, facePaddingValue, controlnetEnabledValue, controlnetTypeValue, controlnetScaleValue, faceidEnabledValue, faceidScaleValue] = await Promise.all([
     env.PROMPT_STORE.get(PROMPT_KEY),
     env.PROMPT_STORE.get(NEGATIVE_KEY),
     env.PROMPT_STORE.get(ALLOW_KEY),
@@ -60,6 +65,11 @@ async function loadPromptConfig(env) {
     env.PROMPT_STORE.get(STRENGTH_KEY),
     env.PROMPT_STORE.get(SEED_KEY),
     env.PROMPT_STORE.get(FACE_PADDING_KEY),
+    env.PROMPT_STORE.get(CONTROLNET_ENABLED_KEY),
+    env.PROMPT_STORE.get(CONTROLNET_TYPE_KEY),
+    env.PROMPT_STORE.get(CONTROLNET_SCALE_KEY),
+    env.PROMPT_STORE.get(FACEID_ENABLED_KEY),
+    env.PROMPT_STORE.get(FACEID_SCALE_KEY),
   ]);
 
   return {
@@ -71,6 +81,11 @@ async function loadPromptConfig(env) {
     defaultStrength: strengthValue ? Number(strengthValue) : DEFAULT_STRENGTH,
     defaultSeed: seedValue ? Number(seedValue) : DEFAULT_SEED,
     facePadding: facePaddingValue ? Number(facePaddingValue) : DEFAULT_FACE_PADDING,
+    controlnetEnabled: controlnetEnabledValue === null ? true : controlnetEnabledValue === 'true',
+    controlnetType: controlnetTypeValue || 'openpose',
+    controlnetScale: controlnetScaleValue ? Number(controlnetScaleValue) : 0.5,
+    faceidEnabled: faceidEnabledValue === null ? false : faceidEnabledValue === 'true',
+    faceidScale: faceidScaleValue ? Number(faceidScaleValue) : 0.55,
   };
 }
 
@@ -161,6 +176,11 @@ export async function onRequestPost(context) {
     }
 
     const facePadding = parseNumber(body.face_padding, promptConfig.facePadding);
+    const controlnetEnabled = parseBool(body.controlnet_enabled ?? body.controlnetEnabled, promptConfig.controlnetEnabled);
+    const controlnetType = body.controlnet_type ?? body.controlnetType ?? promptConfig.controlnetType;
+    const controlnetScale = parseNumber(body.controlnet_scale ?? body.controlnetScale, promptConfig.controlnetScale);
+    const faceidEnabled = parseBool(body.faceid_enabled ?? body.faceidEnabled, promptConfig.faceidEnabled);
+    const faceidScale = parseNumber(body.faceid_scale ?? body.faceidScale, promptConfig.faceidScale);
 
     const createBody = {
       input: {
@@ -175,7 +195,11 @@ export async function onRequestPost(context) {
         guidance_scale: guidance,
         strength: strength,
         face_padding: facePadding,
-        ip_adapter_scale: ipAdapterScale,
+        ip_adapter_scale: faceidEnabled ? faceidScale : ipAdapterScale,  // Use faceidScale if FaceID enabled
+        use_controlnet: controlnetEnabled,
+        controlnet_type: controlnetType,
+        controlnet_scale: controlnetScale,
+        use_faceid: faceidEnabled,
       },
     };
 
