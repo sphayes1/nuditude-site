@@ -12,6 +12,8 @@ const NEGATIVE_KEY = 'negative_prompt';
 const ALLOW_KEY = 'allow_user_prompt';
 const STEPS_KEY = 'default_steps';
 const GUIDANCE_KEY = 'default_guidance';
+const STRENGTH_KEY = 'default_strength';
+const SEED_KEY = 'default_seed';
 const LOGS_KEY = 'generation_logs';
 
 async function requireAuth(request, env) {
@@ -34,12 +36,14 @@ async function loadPromptData(env) {
   if (!env.PROMPT_STORE) {
     throw new Error('PROMPT_STORE binding missing.');
   }
-  const [masterPrompt, negativePrompt, allowValue, stepsValue, guidanceValue, logsValue] = await Promise.all([
+  const [masterPrompt, negativePrompt, allowValue, stepsValue, guidanceValue, strengthValue, seedValue, logsValue] = await Promise.all([
     env.PROMPT_STORE.get(PROMPT_KEY),
     env.PROMPT_STORE.get(NEGATIVE_KEY),
     env.PROMPT_STORE.get(ALLOW_KEY),
     env.PROMPT_STORE.get(STEPS_KEY),
     env.PROMPT_STORE.get(GUIDANCE_KEY),
+    env.PROMPT_STORE.get(STRENGTH_KEY),
+    env.PROMPT_STORE.get(SEED_KEY),
     env.PROMPT_STORE.get(LOGS_KEY),
   ]);
 
@@ -61,6 +65,8 @@ async function loadPromptData(env) {
     allowUserPrompt: allowValue === null ? false : allowValue === 'true',
     defaultSteps: stepsValue ? Number(stepsValue) : 28,
     defaultGuidance: guidanceValue ? Number(guidanceValue) : 5,
+    defaultStrength: strengthValue ? Number(strengthValue) : 0.75,
+    defaultSeed: seedValue ? Number(seedValue) : -1,
     logs,
   };
 }
@@ -70,13 +76,15 @@ async function savePromptData(env, data) {
     throw new Error('PROMPT_STORE binding missing.');
   }
 
-  const { masterPrompt, negativePrompt, allowUserPrompt, defaultSteps, defaultGuidance } = data;
+  const { masterPrompt, negativePrompt, allowUserPrompt, defaultSteps, defaultGuidance, defaultStrength, defaultSeed } = data;
   await Promise.all([
     env.PROMPT_STORE.put(PROMPT_KEY, masterPrompt || ''),
     env.PROMPT_STORE.put(NEGATIVE_KEY, negativePrompt || ''),
     env.PROMPT_STORE.put(ALLOW_KEY, allowUserPrompt ? 'true' : 'false'),
     env.PROMPT_STORE.put(STEPS_KEY, Number.isFinite(defaultSteps) ? String(defaultSteps) : '28'),
     env.PROMPT_STORE.put(GUIDANCE_KEY, Number.isFinite(defaultGuidance) ? String(defaultGuidance) : '5'),
+    env.PROMPT_STORE.put(STRENGTH_KEY, Number.isFinite(defaultStrength) ? String(defaultStrength) : '0.75'),
+    env.PROMPT_STORE.put(SEED_KEY, Number.isFinite(defaultSeed) ? String(defaultSeed) : '-1'),
   ]);
 }
 
@@ -114,6 +122,8 @@ export async function onRequestPost(context) {
     const allowUserPrompt = parseBool(body.allowUserPrompt);
     const defaultSteps = Number(body.defaultSteps);
     const defaultGuidance = Number(body.defaultGuidance);
+    const defaultStrength = Number(body.defaultStrength);
+    const defaultSeed = Number(body.defaultSeed);
 
     await savePromptData(context.env, {
       masterPrompt,
@@ -121,6 +131,8 @@ export async function onRequestPost(context) {
       allowUserPrompt,
       defaultSteps: Number.isFinite(defaultSteps) ? defaultSteps : 28,
       defaultGuidance: Number.isFinite(defaultGuidance) ? defaultGuidance : 5,
+      defaultStrength: Number.isFinite(defaultStrength) ? defaultStrength : 0.75,
+      defaultSeed: Number.isFinite(defaultSeed) ? defaultSeed : -1,
     });
 
     const payload = await loadPromptData(context.env);

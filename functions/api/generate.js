@@ -9,10 +9,14 @@ const NEGATIVE_KEY = 'negative_prompt';
 const ALLOW_KEY = 'allow_user_prompt';
 const STEPS_KEY = 'default_steps';
 const GUIDANCE_KEY = 'default_guidance';
+const STRENGTH_KEY = 'default_strength';
+const SEED_KEY = 'default_seed';
 const LOGS_KEY = 'generation_logs';
 const MAX_LOG_ENTRIES = 25;
 const DEFAULT_STEPS = 28;
 const DEFAULT_GUIDANCE = 5;
+const DEFAULT_STRENGTH = 0.75;
+const DEFAULT_SEED = -1;
 
 const parseBool = (value, fallback = false) => {
   if (typeof value === 'boolean') return value;
@@ -38,15 +42,19 @@ async function loadPromptConfig(env) {
       allowUserPrompt: false,
       defaultSteps: DEFAULT_STEPS,
       defaultGuidance: DEFAULT_GUIDANCE,
+      defaultStrength: DEFAULT_STRENGTH,
+      defaultSeed: DEFAULT_SEED,
     };
   }
 
-  const [masterPrompt, negativePrompt, allowValue, stepsValue, guidanceValue] = await Promise.all([
+  const [masterPrompt, negativePrompt, allowValue, stepsValue, guidanceValue, strengthValue, seedValue] = await Promise.all([
     env.PROMPT_STORE.get(PROMPT_KEY),
     env.PROMPT_STORE.get(NEGATIVE_KEY),
     env.PROMPT_STORE.get(ALLOW_KEY),
     env.PROMPT_STORE.get(STEPS_KEY),
     env.PROMPT_STORE.get(GUIDANCE_KEY),
+    env.PROMPT_STORE.get(STRENGTH_KEY),
+    env.PROMPT_STORE.get(SEED_KEY),
   ]);
 
   return {
@@ -55,6 +63,8 @@ async function loadPromptConfig(env) {
     allowUserPrompt: allowValue === 'true',
     defaultSteps: stepsValue ? Number(stepsValue) : DEFAULT_STEPS,
     defaultGuidance: guidanceValue ? Number(guidanceValue) : DEFAULT_GUIDANCE,
+    defaultStrength: strengthValue ? Number(strengthValue) : DEFAULT_STRENGTH,
+    defaultSeed: seedValue ? Number(seedValue) : DEFAULT_SEED,
   };
 }
 
@@ -119,6 +129,7 @@ export async function onRequestPost(context) {
     const height = parseNumber(body.height, 1024);
     const steps = parseNumber(body.num_inference_steps ?? body.steps, promptConfig.defaultSteps);
     const guidance = parseNumber(body.guidance_scale ?? body.cfg_scale, promptConfig.defaultGuidance);
+    const strength = parseNumber(body.strength, promptConfig.defaultStrength);
     const ipAdapterScale = parseNumber(body.ip_adapter_scale, 0.8);
 
     const referenceImage = (
@@ -128,7 +139,12 @@ export async function onRequestPost(context) {
           ? body.referenceImage
           : undefined
     );
-    const seed = body.seed !== undefined ? String(body.seed) : undefined;
+
+    // Use provided seed, or default from config (if >= 0), otherwise undefined (random)
+    let seed = body.seed !== undefined ? String(body.seed) : undefined;
+    if (seed === undefined && promptConfig.defaultSeed >= 0) {
+      seed = String(promptConfig.defaultSeed);
+    }
 
     if (!userPrompt && !promptConfig.masterPrompt) {
       return json(400, { error: 'Prompt required', detail: 'Provide a user prompt or configure a master prompt.' });
@@ -149,6 +165,7 @@ export async function onRequestPost(context) {
         height,
         num_inference_steps: steps,
         guidance_scale: guidance,
+        strength: strength,
         ip_adapter_scale: ipAdapterScale,
       },
     };
@@ -218,6 +235,7 @@ export async function onRequestPost(context) {
           height,
           steps,
           guidance,
+          strength,
           ipAdapterScale,
           seed,
           referenceImage: ensureDataUrl(referenceImage),

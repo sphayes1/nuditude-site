@@ -208,18 +208,29 @@
         </div>
         <p>The master prompt is always prepended to user prompts before sending jobs to the RunPod worker.</p>
         <form id="prompt-form">
-          <div class="row inline">
-            <div style="flex: 1;">
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div>
               <label for="master-prompt">Master Prompt</label>
               <textarea id="master-prompt" placeholder="Describe your desired baseline style here."></textarea>
             </div>
-            <div style="width: 140px;">
-              <label for="default-steps">Steps</label>
-              <input id="default-steps" type="number" min="1" max="150" step="1" value="28" />
-            </div>
-            <div style="width: 140px;">
-              <label for="default-guidance">Guidance</label>
-              <input id="default-guidance" type="number" min="1" max="20" step="0.1" value="5" />
+
+            <div class="row">
+              <div style="flex: 1;">
+                <label for="default-steps">Steps</label>
+                <input id="default-steps" type="number" min="1" max="150" step="1" value="28" />
+              </div>
+              <div style="flex: 1;">
+                <label for="default-guidance">Guidance</label>
+                <input id="default-guidance" type="number" min="1" max="20" step="0.1" value="5" />
+              </div>
+              <div style="flex: 1;">
+                <label for="default-strength">Strength</label>
+                <input id="default-strength" type="number" min="0.1" max="1.0" step="0.05" value="0.75" />
+              </div>
+              <div style="flex: 1;">
+                <label for="default-seed">Seed (optional)</label>
+                <input id="default-seed" type="number" min="-1" step="1" value="-1" placeholder="Random" />
+              </div>
             </div>
           </div>
 
@@ -263,6 +274,8 @@
       const allowUserPromptInput = document.getElementById('allow-user-prompt');
       const defaultStepsInput = document.getElementById('default-steps');
       const defaultGuidanceInput = document.getElementById('default-guidance');
+      const defaultStrengthInput = document.getElementById('default-strength');
+      const defaultSeedInput = document.getElementById('default-seed');
       const loginStatus = document.getElementById('login-status');
       const saveStatus = document.getElementById('save-status');
       const logoutBtn = document.getElementById('logout-btn');
@@ -335,7 +348,7 @@
               : '<span style="color: var(--muted);">None</span>';
             const segmentationInfo = segmentation || {};
             const settings = [
-              `Size: ${width}×${height}`,
+              `Size: ${width}ï¿½${height}`,
               `Steps: ${steps}`,
               `Guidance: ${guidance}`,
               `IP Scale: ${ipAdapterScale}`,
@@ -366,7 +379,26 @@
               </tr>
             `;
           })
-          .join('');          </table>
+          .join('');
+
+        logsContainer.innerHTML = `
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Combined Prompt</th>
+                <th>Prompts</th>
+                <th>Negative</th>
+                <th>Settings</th>
+                <th>Input</th>
+                <th>Mask</th>
+                <th>Output</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+            </tbody>
+          </table>
         `;
       }
 
@@ -378,6 +410,8 @@
           allowUserPromptInput.checked = Boolean(config.allowUserPrompt);
           defaultStepsInput.value = config.defaultSteps ?? 28;
           defaultGuidanceInput.value = config.defaultGuidance ?? 5;
+          defaultStrengthInput.value = config.defaultStrength ?? 0.75;
+          defaultSeedInput.value = config.defaultSeed ?? -1;
           renderLogs(config.logs);
           saveStatus.textContent = showStatus ? 'Loaded' : '';
         } catch (error) {
@@ -416,6 +450,8 @@
           allowUserPrompt: allowUserPromptInput.checked,
           defaultSteps: Number(defaultStepsInput.value) || 28,
           defaultGuidance: Number(defaultGuidanceInput.value) || 5,
+          defaultStrength: Number(defaultStrengthInput.value) || 0.75,
+          defaultSeed: Number(defaultSeedInput.value) ?? -1,
         };
 
         try {
@@ -435,6 +471,8 @@
             allowUserPromptInput.checked = Boolean(saved.config.allowUserPrompt);
             defaultStepsInput.value = saved.config.defaultSteps ?? 28;
             defaultGuidanceInput.value = saved.config.defaultGuidance ?? 5;
+            defaultStrengthInput.value = saved.config.defaultStrength ?? 0.75;
+            defaultSeedInput.value = saved.config.defaultSeed ?? -1;
             renderLogs(saved.config.logs);
           }
           setTimeout(() => {
@@ -464,6 +502,8 @@
             allowUserPromptInput.checked = Boolean(config.allowUserPrompt);
             defaultStepsInput.value = config.defaultSteps ?? 28;
             defaultGuidanceInput.value = config.defaultGuidance ?? 5;
+            defaultStrengthInput.value = config.defaultStrength ?? 0.75;
+            defaultSeedInput.value = config.defaultSeed ?? -1;
             renderLogs(config.logs);
             saveStatus.textContent = '';
           })
