@@ -14,11 +14,12 @@ const SEED_KEY = 'default_seed';
 const FACE_PADDING_KEY = 'face_padding';
 const LOGS_KEY = 'generation_logs';
 const MAX_LOG_ENTRIES = 25;
-const DEFAULT_STEPS = 28;
-const DEFAULT_GUIDANCE = 5;
-const DEFAULT_STRENGTH = 0.75;
-const DEFAULT_SEED = -1;
-const DEFAULT_FACE_PADDING = 0.05;
+// Optimized defaults for anatomy preservation and quality
+const DEFAULT_STEPS = 50;  // Higher for complete inference, better quality
+const DEFAULT_GUIDANCE = 10;  // Higher for sharper erotic details (9-12 recommended)
+const DEFAULT_STRENGTH = 0.45;  // Lower to preserve anatomy, prevent over-inpainting
+const DEFAULT_SEED = -1;  // -1 = random
+const DEFAULT_FACE_PADDING = 0.05;  // 0.15-0.20 for full outfit swaps
 
 const parseBool = (value, fallback = false) => {
   if (typeof value === 'boolean') return value;
@@ -135,7 +136,7 @@ export async function onRequestPost(context) {
     const steps = parseNumber(body.num_inference_steps ?? body.steps, promptConfig.defaultSteps);
     const guidance = parseNumber(body.guidance_scale ?? body.cfg_scale, promptConfig.defaultGuidance);
     const strength = parseNumber(body.strength, promptConfig.defaultStrength);
-    const ipAdapterScale = parseNumber(body.ip_adapter_scale, 0.8);
+    const ipAdapterScale = parseNumber(body.ip_adapter_scale, 0.55);  // Lower to prevent body warping
 
     const referenceImage = (
       typeof body.reference_image === 'string'

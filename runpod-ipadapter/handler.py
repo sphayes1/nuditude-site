@@ -470,24 +470,15 @@ def handler(job):
         else:
             face_padding_fraction = FACE_PADDING_FRACTION
 
-        use_master_prompt = parse_bool(job_input.get("use_master_prompt"), True)
-        allow_user_prompt_default = parse_bool(ALLOW_USER_PROMPT_ENV, False)
-        allow_user_prompt = parse_bool(job_input.get("allow_user_prompt"), allow_user_prompt_default)
+        # Simplified: Use master prompt only (no user prompt complexity)
         master_prompt_override = job_input.get("master_prompt")
-        if use_master_prompt:
-            if master_prompt_override is not None:
-                master_prompt = str(master_prompt_override).strip()
-            else:
-                master_prompt = get_master_prompt().strip()
+        if master_prompt_override is not None:
+            master_prompt = str(master_prompt_override).strip()
         else:
-            master_prompt = ""
+            master_prompt = get_master_prompt().strip()
 
-        user_prompt = prompt_raw if allow_user_prompt else ""
-        if prompt_raw and not allow_user_prompt:
-            print("User prompt provided but ignored because allow_user_prompt is disabled.")
-
-        prompt_parts = [part for part in (master_prompt, user_prompt, clothing_modifier, body_modifier) if part]
-        prompt = ", ".join(prompt_parts).strip()
+        # For now, ignore user prompts and just use master prompt
+        prompt = master_prompt
 
         if negative_prompt_raw is None or str(negative_prompt_raw).strip() == "":
             negative_prompt = get_negative_prompt_default()
@@ -508,9 +499,8 @@ def handler(job):
         print(f"  Reference image: {bool(reference_image_b64)}")
         print(f"  FaceID scale: {ip_adapter_scale}")
         print(f"  Requested size: {width}x{height}")
-        print(f"  Steps: {num_steps}, Guidance: {guidance}")
-        print(f"  Master prompt active: {bool(master_prompt)}")
-        print(f"  User prompt allowed: {allow_user_prompt}")
+        print(f"  Steps: {num_steps}, Guidance: {guidance}, Strength: {strength}")
+        print(f"  Master prompt: {bool(master_prompt)}")
         print("=" * 60 + "\n")
 
         if not prompt:
@@ -760,12 +750,11 @@ def handler(job):
             "controlnet_type": CONTROLNET_TYPE if CONTROLNET_AVAILABLE else None,
             "id_scale": ip_adapter_scale if use_faceid else None,
             "strength": strength,
+            "guidance_scale": guidance,
             "width": width,
             "height": height,
             "num_inference_steps": num_steps,
             "prompt": prompt,
-            "master_prompt": master_prompt,
-            "user_prompt_allowed": allow_user_prompt,
             "mask_image": mask_b64,
             "mask_start_fraction": mask_start_fraction,
             "face_bbox": [float(x) for x in face_bbox] if face_bbox else None,
