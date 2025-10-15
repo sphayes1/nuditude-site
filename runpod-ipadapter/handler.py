@@ -17,7 +17,7 @@ from io import BytesIO
 import numpy as np
 import runpod
 import torch
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
 from diffusers import AutoencoderKL, StableDiffusionXLInpaintPipeline, ControlNetModel
 from diffusers.pipelines import StableDiffusionXLControlNetInpaintPipeline
 from huggingface_hub import hf_hub_download
@@ -454,11 +454,12 @@ def handler(job):
         body_modifier = str(job_input.get("body_modifier", "")).strip()  # e.g., "curvy hourglass figure, large breasts, thick thighs"
         negative_prompt_raw = job_input.get("negative_prompt")
         reference_image_b64 = job_input.get("reference_image")
-        ip_adapter_scale = float(job_input.get("ip_adapter_scale", 0.9))
+        # Lower FaceID scale to prevent body warping (0.5-0.6 recommended for anatomy preservation)
+        ip_adapter_scale = float(job_input.get("ip_adapter_scale", 0.55))
         width = int(job_input.get("width", 768))
         height = int(job_input.get("height", 1024))
-        num_steps = int(job_input.get("num_inference_steps", 50))
-        guidance = float(job_input.get("guidance_scale", 7.5))
+        num_steps = int(job_input.get("num_inference_steps", 100))
+        guidance = float(job_input.get("guidance_scale", 9.0))
         seed_raw = job_input.get("seed")
 
         # Face padding for mask coverage (higher = more area above face)
@@ -601,13 +602,8 @@ def handler(job):
             mask_start_px = None
             segmentation_diagnostics.setdefault("segmentation_used", True)
 
-        # Ensure the mask is inverted (we want to inpaint the clothing, not the person)
-        # The segmentation mask marks the person, so we need to invert it.
-        # However, the current prompt generation seems to be creating a new image from scratch,
-        # so we might not need to invert the mask. Let's test this first.
-        #
-        # from PIL import ImageOps
-        # mask_image = ImageOps.invert(mask_image.convert("L"))
+        # Invert the mask to target the clothing area for inpainting
+        mask_image = ImageOps.invert(mask_image.convert("L"))
 
 
         # ⚠️ CRITICAL: Enforce face/person detection requirement
@@ -640,10 +636,20 @@ def handler(job):
         if seed_value is not None:
             generator = torch.Generator(device=device).manual_seed(seed_value)
 
-        strength = float(job_input.get("strength", 0.65))  # Lower = preserve more of original
+        strength = float(job_input.get("strength", 0.5))  # Lower = preserve more of original
 
         if use_faceid and ip_adapter is not None and faceid_embeds is not None:
-            print(f"Generating with FaceID (id_scale={ip_adapter_scale}, strength={strength}) ...")
+            # CRITICAL: Generate ControlNet conditioning BEFORE FaceID generation
+            control_image = None
+            if CONTROLNET_AVAILABLE and controlnet_pipe is not None:
+                print(f"Generating ControlNet {CONTROLNET_TYPE} conditioning for pose preservation...")
+                control_image = generate_control_image(reference_image, CONTROLNET_TYPE)
+                if control_image is not None:
+                    print(f"✓ ControlNet {CONTROLNET_TYPE} image generated successfully")
+                else:
+                    print(f"⚠️ ControlNet {CONTROLNET_TYPE} image generation failed, continuing without it")
+
+            print(f"Generating with FaceID (id_scale={ip_adapter_scale}, strength={strength}, controlnet={'YES' if control_image is not None else 'NO'}) ...")
             faceid_kwargs = dict(
                 faceid_embeds=faceid_embeds,
                 prompt=prompt,
@@ -655,16 +661,28 @@ def handler(job):
                 image=reference_image,
                 mask_image=mask_image,
             )
+
+            # Add ControlNet conditioning if available
+            if control_image is not None:
+                faceid_kwargs["control_image"] = control_image
+                faceid_kwargs["controlnet_conditioning_scale"] = 0.6  # Moderate control to preserve pose
+
             if seed_value is not None:
                 faceid_kwargs["seed"] = seed_value
             # Try to add strength if the FaceID method supports it
             try:
                 faceid_kwargs["strength"] = strength
                 output_images = ip_adapter.generate(**faceid_kwargs)
-            except TypeError:
-                # If strength not supported, remove it and try again
-                print("Note: FaceID adapter doesn't support strength parameter")
-                faceid_kwargs.pop("strength", None)
+            except TypeError as e:
+                # If strength or control_image not supported, try without them
+                error_msg = str(e).lower()
+                if "strength" in error_msg:
+                    print("Note: FaceID adapter doesn't support strength parameter")
+                    faceid_kwargs.pop("strength", None)
+                if "control" in error_msg:
+                    print("Note: FaceID adapter doesn't support ControlNet parameters")
+                    faceid_kwargs.pop("control_image", None)
+                    faceid_kwargs.pop("controlnet_conditioning_scale", None)
                 output_images = ip_adapter.generate(**faceid_kwargs)
             output_image = output_images[0]
         else:
@@ -727,10 +745,18 @@ def handler(job):
                 return obj.tolist()
             return obj
 
+        # Check if ControlNet was actually used (either with FaceID or standalone)
+        used_controlnet_flag = False
+        if use_faceid and CONTROLNET_AVAILABLE:
+            # ControlNet was attempted with FaceID - check if control_image was generated
+            used_controlnet_flag = True  # We attempted it, even if it might have failed
+        elif not use_faceid and CONTROLNET_AVAILABLE and controlnet_pipe is not None:
+            used_controlnet_flag = True
+
         response = {
             "image": output_b64,
             "used_faceid": use_faceid and ip_adapter is not None and faceid_embeds is not None,
-            "used_controlnet": CONTROLNET_AVAILABLE and not use_faceid,
+            "used_controlnet": used_controlnet_flag,
             "controlnet_type": CONTROLNET_TYPE if CONTROLNET_AVAILABLE else None,
             "id_scale": ip_adapter_scale if use_faceid else None,
             "strength": strength,

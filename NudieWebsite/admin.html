@@ -217,15 +217,18 @@
             <div class="row">
               <div style="flex: 1;">
                 <label for="default-steps">Steps</label>
-                <input id="default-steps" type="number" min="1" max="150" step="1" value="28" />
+                <input id="default-steps" type="number" min="1" max="150" step="1" value="50" />
+                <small style="color: var(--muted); display: block; margin-top: 4px;">Higher = better quality (50-100 recommended)</small>
               </div>
               <div style="flex: 1;">
                 <label for="default-guidance">Guidance</label>
-                <input id="default-guidance" type="number" min="1" max="20" step="0.1" value="5" />
+                <input id="default-guidance" type="number" min="1" max="20" step="0.1" value="10" />
+                <small style="color: var(--muted); display: block; margin-top: 4px;">Higher = sharper details (9-12 for erotic content)</small>
               </div>
               <div style="flex: 1;">
                 <label for="default-strength">Strength</label>
-                <input id="default-strength" type="number" min="0.1" max="1.0" step="0.05" value="0.75" />
+                <input id="default-strength" type="number" min="0.1" max="1.0" step="0.05" value="0.45" />
+                <small style="color: var(--muted); display: block; margin-top: 4px;">Lower = preserve anatomy (0.4-0.5 recommended)</small>
               </div>
               <div style="flex: 1;">
                 <label for="default-seed">Seed (optional)</label>
@@ -419,9 +422,9 @@
           masterPromptInput.value = config.masterPrompt || '';
           negativePromptInput.value = config.negativePrompt || '';
           allowUserPromptInput.checked = Boolean(config.allowUserPrompt);
-          defaultStepsInput.value = config.defaultSteps ?? 28;
-          defaultGuidanceInput.value = config.defaultGuidance ?? 5;
-          defaultStrengthInput.value = config.defaultStrength ?? 0.75;
+          defaultStepsInput.value = config.defaultSteps ?? 50;
+          defaultGuidanceInput.value = config.defaultGuidance ?? 10;
+          defaultStrengthInput.value = config.defaultStrength ?? 0.45;
           defaultSeedInput.value = config.defaultSeed ?? -1;
           facePaddingInput.value = config.facePadding ?? 0.05;
           renderLogs(config.logs);
@@ -460,9 +463,9 @@
           masterPrompt: masterPromptInput.value.trim(),
           negativePrompt: negativePromptInput.value.trim(),
           allowUserPrompt: allowUserPromptInput.checked,
-          defaultSteps: Number(defaultStepsInput.value) || 28,
-          defaultGuidance: Number(defaultGuidanceInput.value) || 5,
-          defaultStrength: Number(defaultStrengthInput.value) || 0.75,
+          defaultSteps: Number(defaultStepsInput.value) || 50,
+          defaultGuidance: Number(defaultGuidanceInput.value) || 10,
+          defaultStrength: Number(defaultStrengthInput.value) || 0.45,
           defaultSeed: Number(defaultSeedInput.value) ?? -1,
           facePadding: Number(facePaddingInput.value) || 0.05,
         };
